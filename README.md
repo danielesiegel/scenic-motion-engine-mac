@@ -59,6 +59,24 @@ Native macOS port of [`scenic-motion-engine-web`](https://github.com/danielesieg
 
 ---
 
+## Documentation
+
+- [Motion extension guide](MOTION.md)
+- [User guide](docs/USER_GUIDE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Path reference](docs/PATH_REFERENCE.md)
+- [Motion recipes](docs/MOTION_RECIPES.md)
+- [Doc index](docs/DOC_INDEX.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+- [Third-party licenses](THIRDPARTY.md)
+- [License](LICENSE)
+- [Shell completions](completions/README.md)
+- [Project website source](website/README.md)
+
+---
+
 ## Demo
 
 Short clips land here once the first builds are captured.

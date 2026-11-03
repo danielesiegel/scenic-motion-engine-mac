@@ -1,0 +1,105 @@
+{
+  "text": {
+    "unit": "scenicsynth",
+    "key": "scenicsynths",
+    "case": "lower"
+  },
+  "layout": {
+    "fontSizePx": 72.0,
+    "leadingPx": 0.0,
+    "rows": 1,
+    "rowStaggerPx": 0.0,
+    "rotationDeg": 0.0,
+    "marginPx": 0.0
+  },
+  "colors": {
+    "background": "#0b0b0b",
+    "dim": "#2c2c2c",
+    "key": "#d6d6d6"
+  },
+  "key": {
+    "rows": "single",
+    "singleRow": "middle",
+    "frequency": 10,
+    "offsetUnits": 0,
+    "rowPhaseOffset": false,
+    "mode": "travels",
+    "anchorScreenOffsetPx": 0.0
+  },
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "dpr": 2.0,
+    "renderScale": 2.0
+  },
+  "audio": {
+    "track": null,
+    "analysisUrl": null
+  },
+  "tickers": [
+    {
+      "id": "kick-slide",
+      "band": "kick",
+      "modulo": 1,
+      "strengthThreshold": 0.25,
+      "offset": null,
+      "step": null,
+      "stepOffset": null
+    }
+  ],
+  "bindings": [
+    {
+      "tickerId": "kick-slide",
+      "target": "rows",
+      "rows": "all",
+      "sequence": {
+        "actions": [
+          {
+            "path": "slideStep",
+            "params": {
+              "units": 1.0
+            },
+            "duration": 0.25,
+            "easing": "easeOutCubic"
+          }
+        ]
+      },
+      "compose": "add",
+      "respectAlternation": null
+    }
+  ],
+  "bandThresholds": {
+    "hats": 0.4,
+    "kick": 0.85,
+    "mid": 0.5,
+    "snare": 0.6
+  },
+  "camera": {
+    "baseline": {
+      "zoom": 1.0,
+      "panX": 0.0,
+      "panY": 0.0,
+      "tilt": 0.0
+    },
+    "rowOvershoot": 0
+  },
+  "feel": {
+    "preset": "default",
+    "durationScale": 1.0,
+    "globalEasing": "auto",
+    "horizontalScale": 1.0,
+    "rowVelocityShape": "flat",
+    "rowVelocityEdgeScale": 1.0
+  },
+  "record": {
+    "startAt": 0.0,
+    "duration": 10.0,
+    "fps": 60,
+    "videoBitrateMbps": 20,
+    "resolutionMultiplier": 2,
+    "engine": "auto"
+  },
+  "debug": {
+    "hud": false
+  }
+}

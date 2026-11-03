@@ -1,0 +1,207 @@
+{
+  "text": {
+    "unit": "scenicsynth",
+    "key": "scenicsynths",
+    "case": "upper"
+  },
+  "layout": {
+    "fontSizePx": 72.0,
+    "leadingPx": 0.0,
+    "rows": "auto",
+    "rowStaggerPx": 0.5,
+    "rotationDeg": 0.0,
+    "marginPx": 0.0
+  },
+  "colors": {
+    "background": "#0b0b0b",
+    "dim": "#2c2c2c",
+    "key": "#ff2a2a"
+  },
+  "key": {
+    "rows": "all",
+    "singleRow": "middle",
+    "frequency": 8,
+    "offsetUnits": 0,
+    "rowPhaseOffset": true,
+    "mode": "travels",
+    "anchorScreenOffsetPx": 0.0
+  },
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "dpr": 2.0,
+    "renderScale": 2.0
+  },
+  "audio": {
+    "track": null,
+    "analysisUrl": null
+  },
+  "tickers": [
+    {
+      "id": "kick-slam",
+      "band": "kick",
+      "modulo": 1,
+      "strengthThreshold": 0.2,
+      "offset": null,
+      "step": null,
+      "stepOffset": null
+    },
+    {
+      "id": "hats-chaos",
+      "band": "hats",
+      "modulo": 1,
+      "strengthThreshold": 0.3,
+      "offset": null,
+      "step": null,
+      "stepOffset": null
+    },
+    {
+      "id": "kick-cam-zoom",
+      "band": "kick",
+      "modulo": 2,
+      "strengthThreshold": 0.2,
+      "offset": null,
+      "step": 2,
+      "stepOffset": 0
+    },
+    {
+      "id": "kick-cam-tilt",
+      "band": "kick",
+      "modulo": 2,
+      "strengthThreshold": 0.2,
+      "offset": null,
+      "step": 2,
+      "stepOffset": 1
+    }
+  ],
+  "bindings": [
+    {
+      "tickerId": "kick-slam",
+      "target": "rows",
+      "rows": "all",
+      "sequence": {
+        "actions": [
+          {
+            "path": "slideStep",
+            "params": {
+              "units": 2.0
+            },
+            "duration": 0.12,
+            "easing": "easeOutBack"
+          }
+        ]
+      },
+      "compose": "add",
+      "respectAlternation": null
+    },
+    {
+      "tickerId": "hats-chaos",
+      "target": "rows",
+      "rows": "all",
+      "sequence": {
+        "actions": [
+          {
+            "path": "glyphJitter",
+            "params": {
+              "amplitude": 3.0
+            },
+            "duration": 0.06,
+            "easing": "linear"
+          }
+        ]
+      },
+      "compose": "add",
+      "respectAlternation": null
+    },
+    {
+      "tickerId": "kick-cam-zoom",
+      "target": "camera",
+      "rows": null,
+      "sequence": {
+        "actions": [
+          {
+            "path": "cameraZoomDeltaFocused",
+            "params": {
+              "deltaScale": 0.35,
+              "focusFrac": 0.5
+            },
+            "duration": 0.18,
+            "easing": "easeOutBack"
+          },
+          {
+            "path": "cameraZoomDeltaFocused",
+            "params": {
+              "deltaScale": -0.35,
+              "focusFrac": 0.5
+            },
+            "duration": 0.18,
+            "easing": "easeOutCubic"
+          }
+        ]
+      },
+      "compose": "add",
+      "respectAlternation": null
+    },
+    {
+      "tickerId": "kick-cam-tilt",
+      "target": "camera",
+      "rows": null,
+      "sequence": {
+        "actions": [
+          {
+            "path": "cameraTiltDelta",
+            "params": {
+              "deltaDegrees": 20.0
+            },
+            "duration": 0.16,
+            "easing": "easeOutBack"
+          },
+          {
+            "path": "cameraTiltDelta",
+            "params": {
+              "deltaDegrees": -20.0
+            },
+            "duration": 0.16,
+            "easing": "easeOutBack"
+          }
+        ]
+      },
+      "compose": "add",
+      "respectAlternation": null
+    }
+  ],
+  "bandThresholds": {
+    "hats": 0.3,
+    "kick": 0.6,
+    "mid": 0.4,
+    "snare": 0.5
+  },
+  "camera": {
+    "baseline": {
+      "zoom": 1.0,
+      "panX": 0.0,
+      "panY": 0.0,
+      "tilt": -8.0
+    },
+    "rowOvershoot": 4
+  },
+  "feel": {
+    "preset": "snappy",
+    "durationScale": 0.5,
+    "globalEasing": "auto",
+    "horizontalScale": 1.2,
+    "rowVelocityShape": "inverted-u",
+    "rowVelocityEdgeScale": 1.5
+  },
+  "record": {
+    "startAt": 0.0,
+    "duration": 10.0,
+    "fps": 60,
+    "videoBitrateMbps": 20,
+    "resolutionMultiplier": 2,
+    "engine": "auto"
+  },
+  "debug": {
+    "hud": false
+  }
+}
