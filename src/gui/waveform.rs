@@ -67,7 +67,7 @@ impl WaveformStrip {
         let center_y = rect.center().y;
         let half_h = (STRIP_HEIGHT * 0.5) - 2.0;
         let left = rect.left();
-        let stroke = Stroke::new(1.0, line_color);
+        let stroke = Stroke::new(1.0_f32, line_color);
 
         for (i, &peak) in self.cached_peaks.iter().enumerate() {
             let x = left + i as f32 + 0.5;
@@ -88,7 +88,7 @@ impl WaveformStrip {
         let px = left + frac * rect.width();
         painter.line_segment(
             [egui::pos2(px, rect.top()), egui::pos2(px, rect.bottom())],
-            Stroke::new(2.0, playhead_color),
+            Stroke::new(2.0_f32, playhead_color),
         );
 
         // Interaction: click or drag to seek.

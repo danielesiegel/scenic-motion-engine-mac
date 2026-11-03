@@ -142,7 +142,7 @@ fn paint_hint_overlay(ctx: &egui::Context) {
     painter.rect_stroke(
         pill,
         12.0,
-        egui::Stroke::new(1.5, Color32::from_white_alpha(90)),
+        egui::Stroke::new(1.5_f32, Color32::from_white_alpha(90)),
     );
     painter.text(
         center,

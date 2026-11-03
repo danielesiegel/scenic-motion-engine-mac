@@ -101,7 +101,7 @@ pub fn soft_divider(ui: &mut egui::Ui) {
     let faded = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 51);
     let y = ui.cursor().min.y;
     ui.painter()
-        .hline(ui.max_rect().x_range(), y, Stroke::new(1.0, faded));
+        .hline(ui.max_rect().x_range(), y, Stroke::new(1.0_f32, faded));
     ui.add_space(4.0);
 }
 
@@ -193,14 +193,14 @@ fn apply_visuals(style: &mut Style) {
     };
 
     // Window stroke (hairline border).
-    v.window_stroke = Stroke::new(0.5, p.border);
+    v.window_stroke = Stroke::new(0.5_f32, p.border);
 
     // Logic Pro–style bare collapsing headers (no boxed frame, just an indent chevron).
     v.collapsing_header_frame = false;
 
     // Selection (text, highlighted items).
     v.selection.bg_fill = p.selected;
-    v.selection.stroke = Stroke::new(1.0, p.selected);
+    v.selection.stroke = Stroke::new(1.0_f32, p.selected);
     v.hyperlink_color = p.selected;
 
     // Widget visuals: tighten rounding and move to Mac grays.
@@ -209,7 +209,7 @@ fn apply_visuals(style: &mut Style) {
 
 fn apply_widget_visuals(v: &mut Visuals, p: &MacPalette) {
     let r = Rounding::same(6.0);
-    let hairline = Stroke::new(0.5, p.border);
+    let hairline = Stroke::new(0.5_f32, p.border);
 
     // Noninteractive = window chrome / dividers.
     let w = &mut v.widgets.noninteractive;
@@ -217,7 +217,7 @@ fn apply_widget_visuals(v: &mut Visuals, p: &MacPalette) {
     w.bg_fill = p.panel_bg;
     w.weak_bg_fill = p.panel_bg;
     w.bg_stroke = hairline;
-    w.fg_stroke = Stroke::new(1.0, p.text_primary);
+    w.fg_stroke = Stroke::new(1.0_f32, p.text_primary);
 
     // Inactive = buttons at rest, slider track.
     let w = &mut v.widgets.inactive;
@@ -225,23 +225,23 @@ fn apply_widget_visuals(v: &mut Visuals, p: &MacPalette) {
     w.bg_fill = p.hover;
     w.weak_bg_fill = p.panel_bg;
     w.bg_stroke = hairline;
-    w.fg_stroke = Stroke::new(1.0, p.text_primary);
+    w.fg_stroke = Stroke::new(1.0_f32, p.text_primary);
 
     // Hovered = highlight on mouseover.
     let w = &mut v.widgets.hovered;
     w.rounding = r;
     w.bg_fill = p.hover;
     w.weak_bg_fill = p.hover;
-    w.bg_stroke = Stroke::new(0.5, p.selected);
-    w.fg_stroke = Stroke::new(1.0, p.text_primary);
+    w.bg_stroke = Stroke::new(0.5_f32, p.selected);
+    w.fg_stroke = Stroke::new(1.0_f32, p.text_primary);
 
     // Active = pressed / focused.
     let w = &mut v.widgets.active;
     w.rounding = r;
     w.bg_fill = p.selected;
     w.weak_bg_fill = p.selected;
-    w.bg_stroke = Stroke::new(1.0, p.selected);
-    w.fg_stroke = Stroke::new(1.0, Color32::WHITE);
+    w.bg_stroke = Stroke::new(1.0_f32, p.selected);
+    w.fg_stroke = Stroke::new(1.0_f32, Color32::WHITE);
 
     // Open = combo-box with a dropdown out.
     let w = &mut v.widgets.open;
@@ -249,7 +249,7 @@ fn apply_widget_visuals(v: &mut Visuals, p: &MacPalette) {
     w.bg_fill = p.hover;
     w.weak_bg_fill = p.hover;
     w.bg_stroke = hairline;
-    w.fg_stroke = Stroke::new(1.0, p.text_primary);
+    w.fg_stroke = Stroke::new(1.0_f32, p.text_primary);
 }
 
 // ---------------------------------------------------------------------------

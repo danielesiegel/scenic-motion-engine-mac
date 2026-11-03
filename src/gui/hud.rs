@@ -23,7 +23,7 @@ impl HudOverlay {
                 .rounding(Rounding::same(8.0))
                 .inner_margin(egui::Margin::same(10.0))
                 .stroke(Stroke::new(
-                    1.0,
+                    1.0_f32,
                     Color32::from_rgba_unmultiplied(255, 255, 255, 40),
                 ));
 
