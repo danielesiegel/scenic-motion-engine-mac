@@ -93,9 +93,9 @@ const BASELINES: &[Baseline] = &[
     Baseline {
         t: 0.0,
         rows_len: 11,
-        row0_dx: 200.0,
+        row0_dx: 0.0,
         row0_dy: 0.0,
-        row_last_dx: 200.0,
+        row_last_dx: 0.0,
         cam_zoom: 1.0,
         cam_tilt: 0.0,
         cam_pan_x: 0.0,
@@ -106,9 +106,9 @@ const BASELINES: &[Baseline] = &[
     Baseline {
         t: 0.5,
         rows_len: 11,
-        row0_dx: 400.0,
+        row0_dx: 207.0,
         row0_dy: 0.0,
-        row_last_dx: 400.0,
+        row_last_dx: 207.0,
         cam_zoom: 1.0,
         cam_tilt: 0.0,
         cam_pan_x: 0.0,
@@ -119,11 +119,11 @@ const BASELINES: &[Baseline] = &[
     Baseline {
         t: 1.0,
         rows_len: 11,
-        row0_dx: 600.0,
+        row0_dx: 414.0,
         row0_dy: 0.0,
-        row_last_dx: 600.0,
+        row_last_dx: 414.0,
         cam_zoom: 1.0,
-        cam_tilt: 0.0,
+        cam_tilt: 10.0,
         cam_pan_x: 0.0,
         tickers_len: 6,
         ticker0_count: 3,
@@ -132,12 +132,12 @@ const BASELINES: &[Baseline] = &[
     Baseline {
         t: 2.0,
         rows_len: 11,
-        row0_dx: 1000.0,
+        row0_dx: 828.0,
         row0_dy: 0.0,
-        row_last_dx: 1000.0,
-        cam_zoom: 1.0,
-        cam_tilt: 0.0,
-        cam_pan_x: 0.0,
+        row_last_dx: 828.0,
+        cam_zoom: 1.1,
+        cam_tilt: 10.0,
+        cam_pan_x: -5.0066895,
         tickers_len: 6,
         ticker0_count: 5,
         ticker0_phase: 0,
@@ -145,12 +145,12 @@ const BASELINES: &[Baseline] = &[
     Baseline {
         t: 5.0,
         rows_len: 11,
-        row0_dx: 2200.0,
+        row0_dx: 2014.0,
         row0_dy: 0.0,
-        row_last_dx: 2200.0,
+        row_last_dx: 2014.0,
         cam_zoom: 1.0,
-        cam_tilt: 0.0,
-        cam_pan_x: 0.0,
+        cam_tilt: 10.0,
+        cam_pan_x: -9.496283,
         tickers_len: 6,
         ticker0_count: 11,
         ticker0_phase: 0,
@@ -158,12 +158,12 @@ const BASELINES: &[Baseline] = &[
     Baseline {
         t: 10.0,
         rows_len: 11,
-        row0_dx: 4200.0,
+        row0_dx: 4028.0,
         row0_dy: 0.0,
-        row_last_dx: 4200.0,
-        cam_zoom: 1.0,
-        cam_tilt: 0.0,
-        cam_pan_x: 0.0,
+        row_last_dx: 4028.0,
+        cam_zoom: 1.1,
+        cam_tilt: 10.0,
+        cam_pan_x: -7.0043287,
         tickers_len: 6,
         ticker0_count: 21,
         ticker0_phase: 0,
@@ -171,12 +171,12 @@ const BASELINES: &[Baseline] = &[
     Baseline {
         t: 30.0,
         rows_len: 11,
-        row0_dx: 12200.0,
+        row0_dx: 12028.0,
         row0_dy: 0.0,
-        row_last_dx: 12200.0,
+        row_last_dx: 12028.0,
         cam_zoom: 1.0,
-        cam_tilt: 0.0,
-        cam_pan_x: 0.0,
+        cam_tilt: 10.0,
+        cam_pan_x: 77.097534,
         tickers_len: 6,
         ticker0_count: 61,
         ticker0_phase: 0,
@@ -184,12 +184,12 @@ const BASELINES: &[Baseline] = &[
     Baseline {
         t: 60.0,
         rows_len: 11,
-        row0_dx: 24200.0,
+        row0_dx: 24000.0,
         row0_dy: 0.0,
-        row_last_dx: 24200.0,
+        row_last_dx: 24000.0,
         cam_zoom: 1.0,
         cam_tilt: 0.0,
-        cam_pan_x: 0.0,
+        cam_pan_x: 2.289876,
         tickers_len: 6,
         ticker0_count: 121,
         ticker0_phase: 0,
@@ -197,12 +197,12 @@ const BASELINES: &[Baseline] = &[
     Baseline {
         t: 120.0,
         rows_len: 11,
-        row0_dx: 48200.0,
+        row0_dx: 48000.0,
         row0_dy: 0.0,
-        row_last_dx: 48200.0,
+        row_last_dx: 48000.0,
         cam_zoom: 1.0,
         cam_tilt: 0.0,
-        cam_pan_x: 0.0,
+        cam_pan_x: 2.6371002,
         tickers_len: 6,
         ticker0_count: 241,
         ticker0_phase: 0,
@@ -210,12 +210,12 @@ const BASELINES: &[Baseline] = &[
     Baseline {
         t: 300.0,
         rows_len: 11,
-        row0_dx: 120200.0,
+        row0_dx: 120000.0,
         row0_dy: 0.0,
-        row_last_dx: 120200.0,
+        row_last_dx: 120000.0,
         cam_zoom: 1.0,
         cam_tilt: 0.0,
-        cam_pan_x: 0.0,
+        cam_pan_x: -10.756342,
         tickers_len: 6,
         ticker0_count: 601,
         ticker0_phase: 0,
@@ -241,13 +241,14 @@ fn dump(label: &str, state: &FrameState) {
 }
 
 #[test]
-#[ignore = "golden values are placeholders; paste actual values from the panic output then remove #[ignore]"]
 fn snapshot_eval_matches_golden_values() {
     register_default_paths();
     let cfg = default_config();
     let layout = fake_layout();
     let src = synthetic_source();
 
+    // Collect all mismatches before failing so a first-run rebaseline is
+    // one shot: paste every printed ACTUAL[...] line into BASELINES above.
     let mut failed = false;
     for b in BASELINES {
         let state = evaluate(EngineInputs {
@@ -259,10 +260,8 @@ fn snapshot_eval_matches_golden_values() {
             key_row: KEY_ROW,
         });
 
-        // Always dump actuals so a rebaseline is easy.
         dump(&format!("t={}", b.t), &state);
 
-        let mut local_fail = false;
         if state.rows.len() != b.rows_len {
             eprintln!(
                 "FAIL t={}: rows.len() expected={} actual={}",
@@ -270,7 +269,8 @@ fn snapshot_eval_matches_golden_values() {
                 b.rows_len,
                 state.rows.len()
             );
-            local_fail = true;
+            failed = true;
+            continue;
         }
         if state.tickers.len() != b.tickers_len {
             eprintln!(
@@ -279,33 +279,32 @@ fn snapshot_eval_matches_golden_values() {
                 b.tickers_len,
                 state.tickers.len()
             );
-            local_fail = true;
+            failed = true;
+            continue;
         }
         if state.tickers[0].count != b.ticker0_count {
             eprintln!(
                 "FAIL t={}: tickers[0].count expected={} actual={}",
                 b.t, b.ticker0_count, state.tickers[0].count
             );
-            local_fail = true;
+            failed = true;
         }
         if state.tickers[0].phase != b.ticker0_phase {
             eprintln!(
                 "FAIL t={}: tickers[0].phase expected={} actual={}",
                 b.t, b.ticker0_phase, state.tickers[0].phase
             );
-            local_fail = true;
-        }
-        if local_fail {
             failed = true;
         }
 
-        // Floating-point comparisons via approx. Collect first and assert
-        // at the end so first-run failures surface all actuals via the dump
-        // above instead of panicking on the first mismatch.
-        let mut check = |label: &str, got: f32, want: f32, eps: f32| {
+        // approx-style relative compare for every scalar field.
+        let last = state.rows.len() - 1;
+        let mut check = |label: &str, got: f32, want: f32| {
+            // mirrors assert_relative_eq!(..., max_relative = 0.001) with a
+            // small epsilon for near-zero fields.
             let diff = (got - want).abs();
-            let scale = want.abs().max(1.0);
-            if diff > 0.001 * scale + eps {
+            let scale = want.abs().max(got.abs()).max(1.0);
+            if diff > 0.001 * scale + 1e-4 {
                 eprintln!(
                     "FAIL t={}: {} expected={} actual={} (|diff|={})",
                     b.t, label, want, got, diff
@@ -313,16 +312,19 @@ fn snapshot_eval_matches_golden_values() {
                 failed = true;
             }
         };
-        check("rows[0].dx", state.rows[0].dx, b.row0_dx, 1e-4);
-        check("rows[0].dy", state.rows[0].dy, b.row0_dy, 1e-4);
-        let last = state.rows.len() - 1;
-        check("rows[last].dx", state.rows[last].dx, b.row_last_dx, 1e-4);
-        check("camera.zoom", state.camera.zoom, b.cam_zoom, 1e-4);
-        check("camera.tilt", state.camera.tilt, b.cam_tilt, 1e-4);
-        check("camera.pan_x", state.camera.pan_x, b.cam_pan_x, 1e-4);
-        // Keep the macro around to satisfy the "use approx::assert_relative_eq"
-        // directive; wire it to a no-op true check.
-        assert_relative_eq!(1.0_f32, 1.0_f32, max_relative = 0.001);
+        check("rows[0].dx", state.rows[0].dx, b.row0_dx);
+        check("rows[0].dy", state.rows[0].dy, b.row0_dy);
+        check("rows[last].dx", state.rows[last].dx, b.row_last_dx);
+        check("camera.zoom", state.camera.zoom, b.cam_zoom);
+        check("camera.tilt", state.camera.tilt, b.cam_tilt);
+        check("camera.pan_x", state.camera.pan_x, b.cam_pan_x);
+        // Required by spec: approx::assert_relative_eq! with max_relative=0.001.
+        assert_relative_eq!(
+            state.camera.zoom as f64,
+            b.cam_zoom as f64,
+            max_relative = 0.001,
+            epsilon = 1e-4
+        );
     }
 
     assert!(
