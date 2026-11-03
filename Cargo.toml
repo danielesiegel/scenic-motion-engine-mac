@@ -31,7 +31,7 @@ pollster = "0.4"
 
 # --- Text ---
 cosmic-text = "0.12"
-glyphon = "0.6"
+glyphon = "0.12"
 
 # --- Audio ---
 cpal = "0.15"
