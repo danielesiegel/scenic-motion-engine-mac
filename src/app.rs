@@ -1,33 +1,594 @@
-//! Top-level App. The orchestrator wires this up AFTER the parallel agents have populated the modules.
-//! For now this is a minimal eframe::App that renders a status screen so the project compiles.
+//! Top-level App — eframe::App implementation that wires every module together.
+//!
+//! TextRenderer ownership: lives inside `egui_wgpu`'s `CallbackResources` type-map, not inside this
+//! struct. Both lifetimes work out that way — the `prepare` phase mutably borrows it alongside the
+//! wgpu Device/Queue, and the `paint` phase immutably borrows it inside the actual RenderPass with
+//! the right `'pass` lifetime for glyphon's draw calls.
 
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use crate::audio::{JsonEventSource, Player, SyntheticEventSource};
 use crate::config::defaults::default_config;
-use crate::types::Config;
+use crate::engine::{evaluate, EngineInputs};
+use crate::gui::panel::{ControlPanel, PanelCallbacks};
+use crate::motion::paths::register_default_paths;
+use crate::render::gpu::GpuContext;
+use crate::render::text_renderer::TextRenderer;
+use crate::text::{build_unit_layout, FontLoader};
+use crate::types::*;
+
+const ASSETS_FONTS: &str = "assets/fonts";
+const ASSETS_AUDIO: &str = "assets/audio";
+const ASSETS_ANALYSIS: &str = "analysis";
+
+/// Default background we hand out when the user hasn't touched it yet, keyed to system theme.
+/// Hex strings so they slot straight into `ColorConfig::background`.
+const DEFAULT_BG_DARK: &str = "#0a0a0a";
+const DEFAULT_BG_LIGHT: &str = "#f6f6f6";
 
 pub struct ScenicApp {
     pub config: Config,
     pub status: String,
+
+    font_loader: FontLoader,
+    layout: UnitLayout,
+    source: Arc<dyn EventSource>,
+    player: Player,
+
+    panel: ControlPanel,
+
+    text_renderer_installed: bool,
+    last_font_size: f32,
+    last_render_scale: f32,
+
+    audio_track_name: Option<String>,
+
+    /// Tracks whether we've already seeded a system-theme-appropriate background,
+    /// so we don't clobber a user-picked color on every frame.
+    theme_bg_seeded: bool,
+    /// Default background we installed on first frame — treated as "untouched" when the
+    /// theme flips. Any other string means the user has set their own color.
+    last_default_bg: Option<String>,
 }
 
 impl ScenicApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        register_default_paths();
+
+        // --- egui style: slightly larger default fonts + cleaner spacing. We only
+        // nudge the Proportional font; the custom glyphon stage uses its own fonts.
+        {
+            // Install the default FontDefinitions (bytes don't need to change — we scale
+            // via TextStyles below). This is still called so that if we later want to
+            // add a custom family, the hook is already in place.
+            cc.egui_ctx.set_fonts(egui::FontDefinitions::default());
+            cc.egui_ctx.style_mut(|s| {
+                use egui::{FontFamily, FontId, TextStyle};
+                s.text_styles
+                    .insert(TextStyle::Body, FontId::new(14.0, FontFamily::Proportional));
+                s.text_styles.insert(
+                    TextStyle::Button,
+                    FontId::new(14.0, FontFamily::Proportional),
+                );
+                s.text_styles.insert(
+                    TextStyle::Heading,
+                    FontId::new(16.0, FontFamily::Proportional),
+                );
+                s.text_styles.insert(
+                    TextStyle::Small,
+                    FontId::new(12.0, FontFamily::Proportional),
+                );
+                s.spacing.item_spacing = egui::vec2(8.0, 6.0);
+                s.spacing.button_padding = egui::vec2(10.0, 4.0);
+                s.visuals.collapsing_header_frame = true;
+            });
+        }
+
+        let mut font_loader = find_font_loader();
+        let config = default_config();
+        let layout = build_unit_layout(
+            &mut font_loader,
+            config.layout.font_size_px,
+            &config.text.unit,
+        );
+
+        let (source, player, audio_track_name, mut status) = load_audio_and_analysis(&config);
+
+        // Install TextRenderer into egui_wgpu's CallbackResources type-map. This is the only
+        // ownership pattern that gives the paint callback a `&'pass TextRenderer` which lives long
+        // enough for glyphon's render call inside the egui-wgpu RenderPass.
+        let mut text_renderer_installed = false;
+        if let Some(rs) = cc.wgpu_render_state.as_ref() {
+            let gpu = GpuContext::from_render_state(rs);
+            match TextRenderer::new(gpu, &mut font_loader.font_system) {
+                Ok(mut tr) => {
+                    tr.set_font_family(Some(font_loader.primary_family.clone()));
+                    let scale = config.canvas.render_scale.max(1.0);
+                    let w = (config.canvas.width as f32 * scale) as u32;
+                    let h = (config.canvas.height as f32 * scale) as u32;
+                    tr.resize(w, h);
+                    rs.renderer.write().callback_resources.insert(tr);
+                    text_renderer_installed = true;
+                }
+                Err(err) => {
+                    status.push_str(&format!("\nTextRenderer init failed: {}", err));
+                }
+            }
+        } else {
+            status.push_str("\nwgpu RenderState unavailable — stage will show placeholder only.");
+        }
+
+        let last_font_size = config.layout.font_size_px;
+        let last_render_scale = config.canvas.render_scale;
+
         Self {
-            config: default_config(),
-            status: "scenic-motion-engine: scaffold.\nModules fill in incrementally as agents land.".to_string(),
+            config,
+            status,
+            font_loader,
+            layout,
+            source,
+            player,
+            panel: ControlPanel::default(),
+            text_renderer_installed,
+            last_font_size,
+            last_render_scale,
+            audio_track_name,
+            theme_bg_seeded: false,
+            last_default_bg: None,
+        }
+    }
+
+    /// Match `config.colors.background` to the current egui theme, but only if the
+    /// user hasn't customised it. First call always seeds; later calls only re-seed
+    /// when the stored value is exactly the previously-installed default (meaning
+    /// the user hasn't typed over it in the color picker).
+    fn sync_default_background(&mut self, ctx: &egui::Context) {
+        let is_dark = ctx.style().visuals.dark_mode;
+        let desired = if is_dark {
+            DEFAULT_BG_DARK
+        } else {
+            DEFAULT_BG_LIGHT
+        };
+        if !self.theme_bg_seeded {
+            self.config.colors.background = desired.to_string();
+            self.last_default_bg = Some(desired.to_string());
+            self.theme_bg_seeded = true;
+            return;
+        }
+        if let Some(prev) = self.last_default_bg.as_deref() {
+            if self.config.colors.background == prev && prev != desired {
+                self.config.colors.background = desired.to_string();
+                self.last_default_bg = Some(desired.to_string());
+            }
+        }
+    }
+
+    /// Handle Space/⌘-O/⌘-R/⌘-. shortcuts. Returns whether we should request a reload-analysis.
+    fn handle_shortcuts(&mut self, ctx: &egui::Context) -> ShortcutActions {
+        let mut actions = ShortcutActions::default();
+        ctx.input(|i| {
+            // Space = play/pause.
+            if i.key_pressed(egui::Key::Space) {
+                actions.toggle_playback = true;
+            }
+            // Cmd+O = open audio file.
+            if i.modifiers.mac_cmd && i.key_pressed(egui::Key::O) {
+                actions.pick_audio = true;
+            }
+            // Cmd+R = reload analysis.
+            if i.modifiers.mac_cmd && i.key_pressed(egui::Key::R) {
+                actions.reload_analysis = true;
+            }
+            // Cmd+. = stop (seek to record.startAt).
+            if i.modifiers.mac_cmd && i.key_pressed(egui::Key::Period) {
+                actions.stop = true;
+            }
+        });
+        actions
+    }
+
+    fn open_audio_dialog(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("audio", &["wav", "mp3", "flac"])
+            .pick_file()
+        else {
+            return;
+        };
+        match self.player.load_file(&path) {
+            Ok(_) => {
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("audio")
+                    .to_string();
+                self.audio_track_name = Some(name.clone());
+                self.status = format!(
+                    "audio: {} ({:.1}s @ {}Hz)\n",
+                    name,
+                    self.player.duration(),
+                    self.player.sample_rate()
+                );
+                self.reload_matching_analysis();
+            }
+            Err(err) => {
+                self.status = format!("audio load failed: {}\n", err);
+            }
+        }
+    }
+
+    fn reload_matching_analysis(&mut self) {
+        let Some(name) = self.audio_track_name.as_deref() else {
+            self.source = Arc::new(SyntheticEventSource::default());
+            self.status
+                .push_str("analysis: synthetic (no track loaded)\n");
+            return;
+        };
+        let analysis_path = PathBuf::from(ASSETS_ANALYSIS).join(format!("{}.json", name));
+        match JsonEventSource::load(&analysis_path) {
+            Ok(src) => {
+                self.status.push_str(&format!(
+                    "analysis: {} ({} bands)\n",
+                    analysis_path.display(),
+                    src.bands().len()
+                ));
+                self.source = Arc::new(src);
+            }
+            Err(err) => {
+                self.status.push_str(&format!(
+                    "analysis fallback → synthetic ({}): {}\n",
+                    analysis_path.display(),
+                    err
+                ));
+                self.source = Arc::new(SyntheticEventSource::default());
+            }
+        }
+    }
+
+    fn stop_to_start_at(&mut self) {
+        self.player.pause();
+        let start = self.config.record.start_at;
+        self.player.seek(start);
+    }
+
+    fn maybe_rebuild_layout(&mut self) {
+        if (self.config.layout.font_size_px - self.last_font_size).abs() > f32::EPSILON {
+            self.last_font_size = self.config.layout.font_size_px;
+            self.layout = build_unit_layout(
+                &mut self.font_loader,
+                self.config.layout.font_size_px,
+                &self.config.text.unit,
+            );
+        }
+    }
+
+    fn resolve_row_count_and_key(&self) -> (u32, u32) {
+        let row_count = match self.config.layout.rows {
+            RowsMode::Count(n) => n.max(1),
+            RowsMode::Auto(_) => {
+                let h = (self.config.canvas.height as f32 - 2.0 * self.config.layout.margin_px)
+                    .max(1.0);
+                let lh = if self.config.layout.leading_px > 0.0 {
+                    self.config.layout.leading_px
+                } else {
+                    self.layout.line_height.max(self.config.layout.font_size_px)
+                };
+                let base = (h / lh).ceil() as u32;
+                let extra = self.config.camera.row_overshoot;
+                base.max(1) + 2 * extra
+            }
+        };
+        let key_row = match self.config.key.single_row {
+            KeyRowValue::Middle(_) => row_count / 2,
+            KeyRowValue::Index(i) => i.min(row_count.saturating_sub(1)),
+        };
+        (row_count, key_row)
+    }
+}
+
+#[derive(Default)]
+struct ShortcutActions {
+    toggle_playback: bool,
+    pick_audio: bool,
+    reload_analysis: bool,
+    stop: bool,
+}
+
+impl eframe::App for ScenicApp {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        self.sync_default_background(ctx);
+
+        let actions = self.handle_shortcuts(ctx);
+        if actions.toggle_playback {
+            if self.player.is_playing() {
+                self.player.pause();
+            } else {
+                let _ = self.player.play();
+            }
+        }
+        if actions.pick_audio {
+            self.open_audio_dialog();
+        }
+        if actions.reload_analysis {
+            self.reload_matching_analysis();
+        }
+        if actions.stop {
+            self.stop_to_start_at();
+        }
+
+        // Resync the backing-store size if renderScale changed.
+        if (self.config.canvas.render_scale - self.last_render_scale).abs() > f32::EPSILON {
+            self.last_render_scale = self.config.canvas.render_scale;
+            if let Some(rs) = frame.wgpu_render_state() {
+                if let Some(tr) = rs
+                    .renderer
+                    .write()
+                    .callback_resources
+                    .get_mut::<TextRenderer>()
+                {
+                    let scale = self.config.canvas.render_scale.max(1.0);
+                    let w = (self.config.canvas.width as f32 * scale) as u32;
+                    let h = (self.config.canvas.height as f32 * scale) as u32;
+                    tr.resize(w, h);
+                }
+            }
+        }
+
+        self.maybe_rebuild_layout();
+
+        // --- Side panel (controls) ---
+        // The panel callbacks go through flags because the panel borrows &mut self.config.
+        let mut want_reload_analysis = false;
+        let mut want_copy_config = false;
+        egui::SidePanel::right("control")
+            .default_width(360.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                let mut cbs = PanelCallbacks {
+                    on_record: None,
+                    on_copy_config: Some(Box::new(|| {
+                        want_copy_config = true;
+                    })),
+                    on_reload_analysis: Some(Box::new(|| {
+                        want_reload_analysis = true;
+                    })),
+                };
+                self.panel.ui(ui, &mut self.config, &mut cbs);
+            });
+        if want_copy_config {
+            match serde_json::to_string_pretty(&self.config) {
+                Ok(json) => ctx.copy_text(json),
+                Err(err) => log::warn!("copy config failed: {}", err),
+            }
+        }
+        if want_reload_analysis {
+            self.reload_matching_analysis();
+        }
+
+        // --- Central stage ---
+        // Zero margins so the GPU text / background fills the entire stage without
+        // egui's style padding bleeding through.
+        let bg_color = parse_bg_color(&self.config.colors.background);
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::default()
+                    .fill(bg_color)
+                    .inner_margin(egui::Margin::ZERO),
+            )
+            .show(ctx, |ui| {
+                let t = self.player.time();
+                let (row_count, key_row) = self.resolve_row_count_and_key();
+                let state = evaluate(EngineInputs {
+                    t,
+                    config: &self.config,
+                    source: self.source.as_ref(),
+                    layout: &self.layout,
+                    row_count,
+                    key_row,
+                });
+
+                if self.text_renderer_installed {
+                    // Prepare glyphon on the UI thread (needs &mut FontSystem).
+                    if let Some(rs) = frame.wgpu_render_state() {
+                        let mut rw = rs.renderer.write();
+                        if let Some(tr) = rw.callback_resources.get_mut::<TextRenderer>() {
+                            if let Err(err) = tr.prepare(
+                                &self.config,
+                                &self.layout,
+                                &state,
+                                row_count,
+                                key_row,
+                                &mut self.font_loader.font_system,
+                            ) {
+                                log::warn!("TextRenderer::prepare failed: {}", err);
+                            }
+                        }
+                    }
+                    // Dispatch an empty paint callback that only invokes TextRenderer::render
+                    // against the live RenderPass with 'pass-bound CallbackResources access.
+                    let rect = ui.max_rect();
+                    ui.painter().add(egui_wgpu::Callback::new_paint_callback(
+                        rect,
+                        ScenicPaintCallback,
+                    ));
+                } else {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(40.0);
+                        ui.heading("scenic-motion-engine");
+                        ui.monospace(&self.status);
+                        if let Some(name) = &self.audio_track_name {
+                            ui.label(format!("audio: {}", name));
+                        }
+                        ui.label(format!("t = {:.3}s", t));
+                        ui.label(format!("rows = {}, key = {}", row_count, key_row));
+                        if ui
+                            .button(if self.player.is_playing() {
+                                "pause"
+                            } else {
+                                "play"
+                            })
+                            .clicked()
+                        {
+                            if self.player.is_playing() {
+                                self.player.pause();
+                            } else {
+                                let _ = self.player.play();
+                            }
+                        }
+                    });
+                }
+            });
+
+        // Keep repainting while playing so the frame clock advances.
+        if self.player.is_playing() {
+            ctx.request_repaint();
+        } else {
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
     }
 }
 
-impl eframe::App for ScenicApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("scenic-motion-engine");
-            ui.separator();
-            ui.monospace(&self.status);
-            ui.separator();
-            ui.label(format!("canvas: {}×{}", self.config.canvas.width, self.config.canvas.height));
-            ui.label(format!("tickers: {}", self.config.tickers.len()));
-            ui.label(format!("bindings: {}", self.config.bindings.len()));
-        });
+/// Zero-size paint callback: the TextRenderer lives in CallbackResources, so we just dispatch.
+struct ScenicPaintCallback;
+
+impl egui_wgpu::CallbackTrait for ScenicPaintCallback {
+    fn paint(
+        &self,
+        _info: egui::PaintCallbackInfo,
+        pass: &mut wgpu::RenderPass<'static>,
+        resources: &egui_wgpu::CallbackResources,
+    ) {
+        // SAFETY: egui_wgpu's `CallbackResources` type-map lives inside its long-lived
+        // `Renderer`, which outlives any individual RenderPass. The borrow checker only sees the
+        // method-local lifetime of `resources`, but the backing storage is effectively 'static for
+        // the duration of this paint callback. We transmute to 'static so the TextRenderer handle
+        // satisfies glyphon::TextRenderer::render's `'pass`-tied signature.
+        let tr: &'static TextRenderer = unsafe {
+            match resources.get::<TextRenderer>() {
+                Some(r) => std::mem::transmute::<&TextRenderer, &'static TextRenderer>(r),
+                None => return,
+            }
+        };
+        if let Err(err) = tr.render(pass) {
+            log::warn!("TextRenderer::render failed: {}", err);
+        }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Startup helpers
+// ---------------------------------------------------------------------------
+
+fn find_font_loader() -> FontLoader {
+    let dir = PathBuf::from(ASSETS_FONTS);
+    if dir.is_dir() {
+        FontLoader::new_with_dir(&dir).unwrap_or_else(|err| {
+            log::warn!(
+                "FontLoader::new_with_dir({}) failed: {} — falling back to system fonts.",
+                dir.display(),
+                err
+            );
+            FontLoader::new()
+        })
+    } else {
+        FontLoader::new()
+    }
+}
+
+fn first_file_with_ext(dir: &str, ext: &str) -> Option<PathBuf> {
+    let d = PathBuf::from(dir);
+    if !d.is_dir() {
+        return None;
+    }
+    let mut matches: Vec<PathBuf> = fs::read_dir(&d)
+        .ok()?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.is_file()
+                && p.extension()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.eq_ignore_ascii_case(ext))
+                    .unwrap_or(false)
+        })
+        .collect();
+    matches.sort();
+    matches.into_iter().next()
+}
+
+fn load_audio_and_analysis(
+    config: &Config,
+) -> (Arc<dyn EventSource>, Player, Option<String>, String) {
+    let mut status = String::new();
+    let mut player = Player::new();
+    let mut track_name: Option<String> = None;
+
+    let wav = first_file_with_ext(ASSETS_AUDIO, "wav");
+    if let Some(path) = &wav {
+        match player.load_file(path) {
+            Ok(_) => {
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("audio")
+                    .to_string();
+                status.push_str(&format!(
+                    "audio: {} ({:.1}s @ {}Hz)\n",
+                    name,
+                    player.duration(),
+                    player.sample_rate()
+                ));
+                track_name = Some(name);
+            }
+            Err(err) => {
+                status.push_str(&format!("audio load failed: {}\n", err));
+            }
+        }
+    } else {
+        status.push_str(&format!("no .wav in {}\n", ASSETS_AUDIO));
+    }
+
+    let source: Arc<dyn EventSource> = if let Some(ref name) = track_name {
+        let analysis_path = PathBuf::from(ASSETS_ANALYSIS).join(format!("{}.json", name));
+        match JsonEventSource::load(&analysis_path) {
+            Ok(src) => {
+                status.push_str(&format!(
+                    "analysis: {} ({} bands)\n",
+                    analysis_path.display(),
+                    src.bands().len()
+                ));
+                Arc::new(src)
+            }
+            Err(err) => {
+                status.push_str(&format!(
+                    "analysis fallback → synthetic ({}): {}\n",
+                    analysis_path.display(),
+                    err
+                ));
+                Arc::new(SyntheticEventSource::default())
+            }
+        }
+    } else {
+        status.push_str("analysis: synthetic (no track loaded)\n");
+        Arc::new(SyntheticEventSource::default())
+    };
+
+    status.push_str(&format!(
+        "tickers: {}, bindings: {}\n",
+        config.tickers.len(),
+        config.bindings.len()
+    ));
+
+    (source, player, track_name, status)
+}
+
+fn parse_bg_color(hex: &str) -> egui::Color32 {
+    let h = hex.trim_start_matches('#');
+    if h.len() != 6 {
+        return egui::Color32::BLACK;
+    }
+    let r = u8::from_str_radix(&h[0..2], 16).unwrap_or(0);
+    let g = u8::from_str_radix(&h[2..4], 16).unwrap_or(0);
+    let b = u8::from_str_radix(&h[4..6], 16).unwrap_or(0);
+    egui::Color32::from_rgb(r, g, b)
 }

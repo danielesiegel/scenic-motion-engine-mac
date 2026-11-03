@@ -70,7 +70,8 @@ struct Placement {
 impl TextRenderer {
     pub fn new(gpu: GpuContext, _font_system: &mut FontSystem) -> Result<Self> {
         let cache = glyphon::Cache::new(&gpu.device);
-        let mut atlas = glyphon::TextAtlas::new(&gpu.device, &gpu.queue, &cache, gpu.surface_format);
+        let mut atlas =
+            glyphon::TextAtlas::new(&gpu.device, &gpu.queue, &cache, gpu.surface_format);
         let viewport = glyphon::Viewport::new(&gpu.device, &cache);
         let renderer = glyphon::TextRenderer::new(
             &mut atlas,
@@ -216,7 +217,8 @@ impl TextRenderer {
                 )
             };
 
-            let (p_min, p_max) = layout.visible_range(scroll_x, -layout.stride, canvas_width + layout.stride);
+            let (p_min, p_max) =
+                layout.visible_range(scroll_x, -layout.stride, canvas_width + layout.stride);
 
             // ---------------- Per-row dim strip (fast path) ----------------
             //
@@ -246,12 +248,8 @@ impl TextRenderer {
                 let sx = (sxc / snap).round() * snap;
                 let sy = (syc / snap).round() * snap;
 
-                let buf_idx = ensure_row_buffer(
-                    &mut self.row_buffers,
-                    &mut used_row,
-                    font_system,
-                    metrics,
-                );
+                let buf_idx =
+                    ensure_row_buffer(&mut self.row_buffers, &mut used_row, font_system, metrics);
                 {
                     let buffer = &mut self.row_buffers[buf_idx];
                     buffer.set_metrics(font_system, metrics);
@@ -497,16 +495,17 @@ fn compute_row_geometry(
         key_row_param
     };
 
-    let base_scroll_x = if matches!(config.key.rows, KeyRows::Single) && row_index == key_row_effective {
-        let kw = key_width(layout);
-        let k_start = config.key.offset_units as i64 * layout.unit_length as i64;
-        config.canvas.width as f32 * 0.5 - kw * 0.5 - layout.glyph_x(k_start)
-    } else {
-        let stagger = hash01(row_index.wrapping_mul(2654435761))
-            * layout.stride
-            * config.layout.row_stagger_px;
-        -stagger
-    };
+    let base_scroll_x =
+        if matches!(config.key.rows, KeyRows::Single) && row_index == key_row_effective {
+            let kw = key_width(layout);
+            let k_start = config.key.offset_units as i64 * layout.unit_length as i64;
+            config.canvas.width as f32 * 0.5 - kw * 0.5 - layout.glyph_x(k_start)
+        } else {
+            let stagger = hash01(row_index.wrapping_mul(2654435761))
+                * layout.stride
+                * config.layout.row_stagger_px;
+            -stagger
+        };
 
     (base_scroll_x, y)
 }
@@ -519,8 +518,8 @@ fn key_width(layout: &UnitLayout) -> f32 {
 fn row_gets_spotlight(config: &Config, row_index: u32, key_row: u32) -> bool {
     match config.key.rows {
         KeyRows::All => true,
-        KeyRows::Even => row_index % 2 == 0,
-        KeyRows::Odd => row_index % 2 == 1,
+        KeyRows::Even => row_index.is_multiple_of(2),
+        KeyRows::Odd => !row_index.is_multiple_of(2),
         KeyRows::Single => row_index == key_row,
     }
 }
@@ -581,8 +580,9 @@ fn is_key_glyph_anchored(
     } else {
         0.0
     };
-    let anchor_start =
-        config.key.anchor_screen_offset_px + (config.key.offset_units as f32) * layout.stride + phase_px;
+    let anchor_start = config.key.anchor_screen_offset_px
+        + (config.key.offset_units as f32) * layout.stride
+        + phase_px;
     let offset_x = ((center_x - anchor_start) % spacing + spacing) % spacing;
     offset_x <= kw
 }
@@ -659,7 +659,9 @@ fn parse_hex_color(s: &str) -> Color {
         3 => {
             // #rgb short form.
             let expand = |b: u8| hex2(b, b);
-            if let (Some(r), Some(g), Some(b)) = (expand(bytes[0]), expand(bytes[1]), expand(bytes[2])) {
+            if let (Some(r), Some(g), Some(b)) =
+                (expand(bytes[0]), expand(bytes[1]), expand(bytes[2]))
+            {
                 return Color::rgba(r, g, b, 255);
             }
         }
@@ -670,7 +672,9 @@ fn parse_hex_color(s: &str) -> Color {
 
 fn scale_alpha(c: Color, alpha: f32) -> Color {
     let [r, g, b, a] = c.as_rgba();
-    let out_a = ((a as f32) * alpha.clamp(0.0, 1.0)).round().clamp(0.0, 255.0) as u8;
+    let out_a = ((a as f32) * alpha.clamp(0.0, 1.0))
+        .round()
+        .clamp(0.0, 255.0) as u8;
     Color::rgba(r, g, b, out_a)
 }
 

@@ -11,12 +11,12 @@
 //! - `feel.row_velocity_shape` + `edge_scale` apply a per-row horizontal multiplier.
 //! - `feel.duration_scale` multiplies every action.duration; `feel.global_easing` overrides easings.
 
-use crate::motion::bindings::select_rows;
 use crate::motion::paths::get_path;
 use crate::motion::phase::apply_easing;
 use crate::motion::tickers::resolve_threshold;
 use crate::types::*;
-use std::collections::HashMap;
+use smallvec::SmallVec;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 pub struct EngineInputs<'a> {
@@ -47,53 +47,139 @@ fn empty_row() -> RowMotionState {
 }
 
 fn empty_camera() -> CameraState {
-    CameraState { zoom: 1.0, pan_x: 0.0, pan_y: 0.0, tilt: 0.0 }
+    CameraState {
+        zoom: 1.0,
+        pan_x: 0.0,
+        pan_y: 0.0,
+        tilt: 0.0,
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Step/offset subsample: keep events at indices [o, o+s, o+2s, ...] where
-// `o = ((stepOffset % s) + s) % s` and `s = max(1, step)`. Matches TS stepFilter.
+// Binary search: first index i such that events[i].t > t  (== count of events
+// with t <= query_t).
 // ---------------------------------------------------------------------------
 
-fn step_filter(events: &[TransientEvent], step: u32, step_offset: u32) -> Vec<TransientEvent> {
+#[inline]
+fn count_le_by_t(events: &[TransientEvent], t: f32) -> usize {
+    let (mut lo, mut hi) = (0usize, events.len());
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if events[mid].t <= t {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    lo
+}
+
+// ---------------------------------------------------------------------------
+// FilterCache: scope-local (one `evaluate()` call) cache keyed by
+// (band, quantized threshold, step, step_offset). HUD snapshot + binding loop
+// share filtered Vecs so we only build each unique filter once per frame.
+// ---------------------------------------------------------------------------
+
+type FilteredVec = SmallVec<[TransientEvent; 128]>;
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct FilterKey {
+    band: Band,
+    threshold_bits: u32, // f32::to_bits — exact-match cache (threshold is derived identically)
+    step: u32,
+    step_offset: u32,
+}
+
+struct FilterCache<'a> {
+    source: &'a dyn EventSource,
+    entries: Vec<(FilterKey, Arc<FilteredVec>)>,
+}
+
+impl<'a> FilterCache<'a> {
+    fn new(source: &'a dyn EventSource) -> Self {
+        Self {
+            source,
+            entries: Vec::with_capacity(8),
+        }
+    }
+
+    fn get(&mut self, ticker: &TickerConfig, effective_threshold: f32) -> Arc<FilteredVec> {
+        let step = ticker.step.unwrap_or(1).max(1);
+        let step_offset = ticker.step_offset.unwrap_or(0);
+        let key = FilterKey {
+            band: ticker.band,
+            threshold_bits: effective_threshold.to_bits(),
+            step,
+            step_offset,
+        };
+        for (k, v) in &self.entries {
+            if *k == key {
+                return v.clone();
+            }
+        }
+        let raw = self.source.get_events(ticker.band);
+        let filtered = build_filtered(raw, effective_threshold, step, step_offset);
+        let arc = Arc::new(filtered);
+        self.entries.push((key, arc.clone()));
+        arc
+    }
+}
+
+// Fused threshold + step filter in a single linear pass. Writes into a SmallVec
+// to avoid heap allocation for the common case (few hundred events post-filter).
+fn build_filtered(
+    raw: &[TransientEvent],
+    threshold: f32,
+    step: u32,
+    step_offset: u32,
+) -> FilteredVec {
     let s = step.max(1) as i64;
     let o = (((step_offset as i64) % s) + s) % s;
-    if s == 1 && o == 0 {
-        return events.to_vec();
-    }
-    let mut out: Vec<TransientEvent> = Vec::new();
-    for (i, e) in events.iter().enumerate() {
-        let ii = i as i64;
-        if (((ii - o) % s + s) % s) == 0 && ii >= o {
-            out.push(*e);
+    let threshold_active = threshold > 0.0;
+    let step_passthrough = s == 1 && o == 0;
+
+    let mut out: FilteredVec = SmallVec::new();
+
+    if threshold_active {
+        if step_passthrough {
+            out.reserve(raw.len());
+            for e in raw {
+                if e.strength >= threshold {
+                    out.push(*e);
+                }
+            }
+        } else {
+            // Enumerate the thresholded sequence (not the raw sequence): step applies
+            // to indices in the post-threshold list, matching TS semantics.
+            let mut idx: i64 = 0;
+            for e in raw {
+                if e.strength >= threshold {
+                    if idx >= o && (((idx - o) % s + s) % s) == 0 {
+                        out.push(*e);
+                    }
+                    idx += 1;
+                }
+            }
+        }
+    } else if step_passthrough {
+        out.reserve(raw.len());
+        out.extend(raw.iter().copied());
+    } else {
+        for (i, e) in raw.iter().enumerate() {
+            let ii = i as i64;
+            if ii >= o && (((ii - o) % s + s) % s) == 0 {
+                out.push(*e);
+            }
         }
     }
     out
 }
 
 // ---------------------------------------------------------------------------
-// Threshold + subsample a band's events for a ticker. Returns the filtered list
-// that both the HUD snapshot and the binding evaluator agree on.
-// ---------------------------------------------------------------------------
-
-fn filtered_events(
-    source: &dyn EventSource,
-    ticker: &TickerConfig,
-    effective_threshold: f32,
-) -> Vec<TransientEvent> {
-    let raw = source.get_events(ticker.band);
-    let thresholded: Vec<TransientEvent> = if effective_threshold > 0.0 {
-        raw.iter().copied().filter(|e| e.strength >= effective_threshold).collect()
-    } else {
-        raw.to_vec()
-    };
-    step_filter(&thresholded, ticker.step.unwrap_or(1), ticker.step_offset.unwrap_or(0))
-}
-
-// ---------------------------------------------------------------------------
 // Effective (duration, easing) for an action under feel settings.
 // ---------------------------------------------------------------------------
 
+#[inline]
 fn effective_action_timing(action: &PhaseAction, config: &Config) -> (f32, Option<Easing>) {
     let scale = config.feel.duration_scale.max(0.01);
     let duration = (action.duration * scale).max(1e-6);
@@ -102,44 +188,6 @@ fn effective_action_timing(action: &PhaseAction, config: &Config) -> (f32, Optio
         GlobalEasing::Named(name) => Some(Easing::Named(name)),
     };
     (duration, easing)
-}
-
-// ---------------------------------------------------------------------------
-// Build the PathContext passed to each motion-path function.
-// ---------------------------------------------------------------------------
-
-fn build_ctx(
-    t: f32,
-    action: &PhaseAction,
-    effective_easing: Option<Easing>,
-    effective_duration: f32,
-    row_index: u32,
-    row_count: u32,
-    dir: Dir,
-    progress: f32,
-    strength: f32,
-    phase: u32,
-    since_last: f32,
-    layout: &UnitLayout,
-    config: &Config,
-) -> PathContext {
-    let eased_progress = apply_easing(effective_easing, progress);
-    PathContext {
-        row_index,
-        row_count,
-        dir,
-        progress,
-        eased_progress,
-        strength,
-        phase,
-        t,
-        since_last,
-        params: action.params.clone(),
-        unit_width: layout.stride,
-        duration: effective_duration,
-        canvas_width: config.canvas.width as f32,
-        canvas_height: config.canvas.height as f32,
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -164,9 +212,7 @@ fn apply_dir(mut out: PathOutput, dir: Dir, respect_alternation: bool) -> PathOu
 }
 
 // ---------------------------------------------------------------------------
-// Accumulate a PathOutput into a running running-sum (all deltas additive).
-// Per-glyph closures accumulate into a Vec; a composite closure is produced
-// at the end that sums them.
+// Running accumulator (all deltas additive).
 // ---------------------------------------------------------------------------
 
 #[derive(Default)]
@@ -181,6 +227,7 @@ struct Running {
 }
 
 impl Running {
+    #[inline]
     fn absorb(&mut self, out: PathOutput) {
         self.dx += out.dx;
         self.dy += out.dy;
@@ -225,8 +272,13 @@ impl Running {
 }
 
 // ---------------------------------------------------------------------------
-// Evaluate one binding's contribution for one row (or scope-less for camera,
-// in which case the caller passes row_index=0 and dir=Pos).
+// Evaluate one binding's contribution for one row (or scope-less for camera).
+//
+// Hot-path notes:
+// - last_idx found via binary search (count_le_by_t).
+// - PathContext is built once; mutated in place across events. params HashMap is
+//   cloned only when the active action pointer changes — for the common case
+//   (modulo <= num_actions == 1) that's one clone per call instead of N.
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_arguments)]
@@ -248,50 +300,91 @@ fn evaluate_binding_contribution(
     let modulo = ticker_cfg.modulo.max(1) as i64;
     let offset = ticker_cfg.offset.unwrap_or(0) as i64;
 
-    // Find index of last event with t_event <= t.
-    let mut last_idx: i64 = -1;
-    for i in (0..filtered.len()).rev() {
-        if filtered[i].t <= t {
-            last_idx = i as i64;
-            break;
-        }
-    }
-    if last_idx < 0 {
+    // last_idx = largest i such that filtered[i].t <= t. Binary search.
+    let upto = count_le_by_t(filtered, t);
+    if upto == 0 {
         return PathOutput::default();
     }
+    let last_idx: usize = upto - 1;
 
-    let respect_alt = binding.respect_alternation.unwrap_or(true)
-        && binding.target == BindingTarget::Rows;
+    let respect_alt =
+        binding.respect_alternation.unwrap_or(true) && binding.target == BindingTarget::Rows;
 
     let mut running = Running::default();
 
+    let unit_width = layout.stride;
+    let canvas_width = config.canvas.width as f32;
+    let canvas_height = config.canvas.height as f32;
+
+    // Prebuild a PathContext we mutate in place.
+    let mut ctx = PathContext {
+        row_index,
+        row_count,
+        dir,
+        progress: 0.0,
+        eased_progress: 0.0,
+        strength: 0.0,
+        phase: 0,
+        t,
+        since_last: 0.0,
+        params: Params::new(),
+        unit_width,
+        duration: 0.0,
+        canvas_width,
+        canvas_height,
+    };
+
+    let mut last_action_ptr: *const PhaseAction = std::ptr::null();
+
     // Past events: frozen progress based on gap to next event.
-    for i in 0..(last_idx as usize) {
+    for i in 0..last_idx {
         let phase_i = (((i as i64 + offset) % modulo) + modulo) % modulo;
         let action = &sequence.actions[(phase_i as usize) % sequence.actions.len()];
-        let path_fn = match get_path(&action.path) { Some(f) => f, None => continue };
+        let path_fn = match get_path(&action.path) {
+            Some(f) => f,
+            None => continue,
+        };
         let (duration, easing) = effective_action_timing(action, config);
         let gap = filtered[i + 1].t - filtered[i].t;
         let frozen = (gap / duration).clamp(0.0, 1.0);
-        let ctx = build_ctx(
-            t, action, easing, duration, row_index, row_count, dir,
-            frozen, filtered[i].strength, phase_i as u32, t - filtered[i].t, layout, config,
-        );
+        let eased = apply_easing(easing, frozen);
+
+        // Repopulate params only when the action pointer changes.
+        let action_ptr: *const PhaseAction = action;
+        if action_ptr != last_action_ptr {
+            ctx.params.clone_from(&action.params);
+            last_action_ptr = action_ptr;
+        }
+        ctx.progress = frozen;
+        ctx.eased_progress = eased;
+        ctx.strength = filtered[i].strength;
+        ctx.phase = phase_i as u32;
+        ctx.since_last = t - filtered[i].t;
+        ctx.duration = duration;
+
         let out = apply_dir(path_fn(&ctx), dir, respect_alt);
         running.absorb(out);
     }
 
     // Active (latest) event.
-    let i = last_idx as usize;
-    let phase_i = (((last_idx + offset) % modulo) + modulo) % modulo;
+    let i = last_idx;
+    let phase_i = (((last_idx as i64 + offset) % modulo) + modulo) % modulo;
     let action = &sequence.actions[(phase_i as usize) % sequence.actions.len()];
     if let Some(path_fn) = get_path(&action.path) {
         let (duration, easing) = effective_action_timing(action, config);
         let progress = ((t - filtered[i].t) / duration).clamp(0.0, 1.0);
-        let ctx = build_ctx(
-            t, action, easing, duration, row_index, row_count, dir,
-            progress, filtered[i].strength, phase_i as u32, t - filtered[i].t, layout, config,
-        );
+        let eased = apply_easing(easing, progress);
+        let action_ptr: *const PhaseAction = action;
+        if action_ptr != last_action_ptr {
+            ctx.params.clone_from(&action.params);
+        }
+        ctx.progress = progress;
+        ctx.eased_progress = eased;
+        ctx.strength = filtered[i].strength;
+        ctx.phase = phase_i as u32;
+        ctx.since_last = t - filtered[i].t;
+        ctx.duration = duration;
+
         let out = apply_dir(path_fn(&ctx), dir, respect_alt);
         running.absorb(out);
     }
@@ -303,6 +396,7 @@ fn evaluate_binding_contribution(
 // Row velocity shaping. Port of rowVelocityScale in engine.ts.
 // ---------------------------------------------------------------------------
 
+#[inline]
 fn row_velocity_scale(row_index: u32, row_count: u32, config: &Config) -> f32 {
     let shape = config.feel.row_velocity_shape;
     let edge_raw = config.feel.row_velocity_edge_scale;
@@ -414,28 +508,24 @@ fn compose_camera(cam: &mut CameraState, out: &PathOutput, mode: ComposeMode) {
 
 // ---------------------------------------------------------------------------
 // Build per-ticker HUD snapshots. Mirrors the loop in engine.ts.
+// Shares a FilterCache with the binding loop.
 // ---------------------------------------------------------------------------
 
 fn build_ticker_snapshots(
     t: f32,
     config: &Config,
-    source: &dyn EventSource,
-    thresholds: &HashMap<String, f32>,
+    thresholds: &BTreeMap<String, f32>,
+    cache: &mut FilterCache<'_>,
 ) -> Vec<TickerSnapshot> {
     let mut out = Vec::with_capacity(config.tickers.len());
     for ticker in &config.tickers {
         let eff_threshold = resolve_threshold(ticker, thresholds);
-        let filtered = filtered_events(source, ticker, eff_threshold);
+        let filtered = cache.get(ticker, eff_threshold);
         let modulo = ticker.modulo.max(1) as i64;
         let offset = ticker.offset.unwrap_or(0) as i64;
 
-        let mut latest_idx: i64 = -1;
-        for i in (0..filtered.len()).rev() {
-            if filtered[i].t <= t {
-                latest_idx = i as i64;
-                break;
-            }
-        }
+        let upto = count_le_by_t(&filtered, t);
+        let latest_idx: i64 = if upto == 0 { -1 } else { (upto - 1) as i64 };
 
         let phase: i64 = if latest_idx >= 0 {
             (((latest_idx + offset) % modulo) + modulo) % modulo
@@ -450,7 +540,9 @@ fn build_ticker_snapshots(
             .find(|b| b.ticker_id == ticker.id)
             .and_then(|b| {
                 let actions = &b.sequence.actions;
-                if actions.is_empty() { None } else {
+                if actions.is_empty() {
+                    None
+                } else {
                     Some(&actions[(phase as usize) % actions.len()])
                 }
             });
@@ -485,11 +577,42 @@ fn build_ticker_snapshots(
 }
 
 // ---------------------------------------------------------------------------
+// Inline row-mask check without allocating a Vec<bool>.
+// ---------------------------------------------------------------------------
+
+#[inline]
+fn row_selected(binding: &Binding, row: u32, row_count: u32, key_row: u32) -> bool {
+    if binding.target == BindingTarget::Camera {
+        return false;
+    }
+    if row >= row_count {
+        return false;
+    }
+    match binding.rows.as_ref() {
+        None => true,
+        Some(RowSelector::Name(name)) => match name {
+            RowSelectorName::All => true,
+            RowSelectorName::Even => row.is_multiple_of(2),
+            RowSelectorName::Odd => !row.is_multiple_of(2),
+            RowSelectorName::KeyRow => row == key_row,
+        },
+        Some(RowSelector::Indices(ix)) => ix.contains(&row),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Public entrypoint.
 // ---------------------------------------------------------------------------
 
 pub fn evaluate(inp: EngineInputs<'_>) -> FrameState {
-    let EngineInputs { t, config, source, layout, row_count, key_row } = inp;
+    let EngineInputs {
+        t,
+        config,
+        source,
+        layout,
+        row_count,
+        key_row,
+    } = inp;
 
     let mut rows: Vec<RowMotionState> = (0..row_count).map(|_| empty_row()).collect();
     let mut camera = empty_camera();
@@ -497,15 +620,15 @@ pub fn evaluate(inp: EngineInputs<'_>) -> FrameState {
     let h_scale = config.feel.horizontal_scale.max(0.0);
     let thresholds = &config.band_thresholds;
 
-    // Ticker snapshots for HUD.
-    let tickers = build_ticker_snapshots(t, config, source, thresholds);
+    // Shared filter cache across the whole evaluate() call.
+    let mut cache = FilterCache::new(source);
+
+    // Ticker snapshots for HUD (reads from cache).
+    let tickers = build_ticker_snapshots(t, config, thresholds, &mut cache);
 
     // Index tickers by id for quick lookup.
-    let ticker_by_id: HashMap<&str, &TickerConfig> = config
-        .tickers
-        .iter()
-        .map(|t| (t.id.as_str(), t))
-        .collect();
+    let ticker_by_id: HashMap<&str, &TickerConfig> =
+        config.tickers.iter().map(|t| (t.id.as_str(), t)).collect();
 
     for binding in &config.bindings {
         let ticker_cfg = match ticker_by_id.get(binding.ticker_id.as_str()) {
@@ -513,29 +636,44 @@ pub fn evaluate(inp: EngineInputs<'_>) -> FrameState {
             None => continue,
         };
         let eff_threshold = resolve_threshold(ticker_cfg, thresholds);
-        let filtered = filtered_events(source, ticker_cfg, eff_threshold);
+        let filtered = cache.get(ticker_cfg, eff_threshold);
         let mode = binding.compose;
 
         if binding.target == BindingTarget::Camera {
             let out = evaluate_binding_contribution(
-                t, binding, ticker_cfg, &binding.sequence, &filtered,
-                0, row_count, Dir::Pos, layout, config,
+                t,
+                binding,
+                ticker_cfg,
+                &binding.sequence,
+                &filtered,
+                0,
+                row_count,
+                Dir::Pos,
+                layout,
+                config,
             );
             let scaled = scale_horizontal(out, h_scale);
             compose_camera(&mut camera, &scaled, mode);
             continue;
         }
 
-        // Rows target.
-        let row_mask = select_rows(binding, row_count, key_row);
+        // Rows target. Inline row selector (no Vec<bool> alloc).
         for row_index in 0..row_count {
-            if !row_mask[row_index as usize] {
+            if !row_selected(binding, row_index, row_count, key_row) {
                 continue;
             }
             let dir = Dir::for_row(row_index);
             let out = evaluate_binding_contribution(
-                t, binding, ticker_cfg, &binding.sequence, &filtered,
-                row_index, row_count, dir, layout, config,
+                t,
+                binding,
+                ticker_cfg,
+                &binding.sequence,
+                &filtered,
+                row_index,
+                row_count,
+                dir,
+                layout,
+                config,
             );
             let row_scale = h_scale * row_velocity_scale(row_index, row_count, config);
             let scaled = scale_horizontal(out, row_scale);
@@ -543,5 +681,10 @@ pub fn evaluate(inp: EngineInputs<'_>) -> FrameState {
         }
     }
 
-    FrameState { t, rows, tickers, camera }
+    FrameState {
+        t,
+        rows,
+        tickers,
+        camera,
+    }
 }

@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  BIN_NAME: scenic-motion-engine
+  APP_NAME: scenic-motion-engine.app
+
+jobs:
+  macos-universal:
+    name: Build universal macOS binary
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build arm64
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Build x86_64
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Create universal binary
+        run: |
+          mkdir -p dist
+          lipo -create -output "dist/${BIN_NAME}" \
+            "target/aarch64-apple-darwin/release/${BIN_NAME}" \
+            "target/x86_64-apple-darwin/release/${BIN_NAME}"
+          lipo -info "dist/${BIN_NAME}"
+          chmod +x "dist/${BIN_NAME}"
+
+      - name: Package .app (if present) or raw binary
+        id: pkg
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          ARCHIVE="${BIN_NAME}-${VERSION}-macos-universal.zip"
+
+          # If a packaging step somewhere else produced a .app bundle in dist/, zip it.
+          # Otherwise, zip the raw universal binary.
+          if [ -d "dist/${APP_NAME}" ]; then
+            # Replace the inner Mach-O with the universal one if present.
+            if [ -f "dist/${APP_NAME}/Contents/MacOS/${BIN_NAME}" ]; then
+              cp "dist/${BIN_NAME}" "dist/${APP_NAME}/Contents/MacOS/${BIN_NAME}"
+            fi
+            (cd dist && zip -r -y "${ARCHIVE}" "${APP_NAME}")
+          else
+            (cd dist && zip -j "${ARCHIVE}" "${BIN_NAME}")
+          fi
+
+          echo "archive=dist/${ARCHIVE}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.pkg.outputs.archive }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true

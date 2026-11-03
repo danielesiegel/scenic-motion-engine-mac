@@ -16,13 +16,13 @@
 //! - `record`  — frame-by-frame MP4 export via ffmpeg subprocess
 //! - `app`     — top-level App struct implementing eframe::App
 
-pub mod types;
-pub mod config;
-pub mod audio;
-pub mod text;
-pub mod motion;
-pub mod engine;
-pub mod render;
-pub mod gui;
-pub mod record;
 pub mod app;
+pub mod audio;
+pub mod config;
+pub mod engine;
+pub mod gui;
+pub mod motion;
+pub mod record;
+pub mod render;
+pub mod text;
+pub mod types;

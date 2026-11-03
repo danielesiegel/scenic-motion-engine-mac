@@ -1,4 +1,4 @@
-pub mod phase;
-pub mod paths;
-pub mod tickers;
 pub mod bindings;
+pub mod paths;
+pub mod phase;
+pub mod tickers;

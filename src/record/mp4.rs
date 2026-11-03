@@ -31,27 +31,48 @@ impl FfmpegRecorder {
     ) -> Result<Self> {
         let mut cmd = Command::new("ffmpeg");
         cmd.arg("-y")
-           .arg("-f").arg("rawvideo")
-           .arg("-pix_fmt").arg("rgba")
-           .arg("-s").arg(format!("{}x{}", width, height))
-           .arg("-r").arg(format!("{}", fps))
-           .arg("-i").arg("-");
+            .arg("-f")
+            .arg("rawvideo")
+            .arg("-pix_fmt")
+            .arg("rgba")
+            .arg("-s")
+            .arg(format!("{}x{}", width, height))
+            .arg("-r")
+            .arg(format!("{}", fps))
+            .arg("-i")
+            .arg("-");
         if let Some(audio) = audio_in {
-            cmd.arg("-ss").arg(format!("{}", start_s))
-               .arg("-to").arg(format!("{}", start_s + dur_s))
-               .arg("-i").arg(audio);
+            cmd.arg("-ss")
+                .arg(format!("{}", start_s))
+                .arg("-to")
+                .arg(format!("{}", start_s + dur_s))
+                .arg("-i")
+                .arg(audio);
         }
-        cmd.arg("-c:v").arg("libx264")
-           .arg("-crf").arg("16")
-           .arg("-pix_fmt").arg("yuv420p")
-           .arg("-movflags").arg("+faststart");
+        cmd.arg("-c:v")
+            .arg("libx264")
+            .arg("-crf")
+            .arg("16")
+            .arg("-pix_fmt")
+            .arg("yuv420p")
+            .arg("-movflags")
+            .arg("+faststart");
         if audio_in.is_some() {
-            cmd.arg("-c:a").arg("aac").arg("-b:a").arg("192k").arg("-shortest");
+            cmd.arg("-c:a")
+                .arg("aac")
+                .arg("-b:a")
+                .arg("192k")
+                .arg("-shortest");
         }
         cmd.arg(output);
-        cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped());
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
         let child = cmd.spawn().context("spawn ffmpeg")?;
-        Ok(Self { child, output: output.to_path_buf() })
+        Ok(Self {
+            child,
+            output: output.to_path_buf(),
+        })
     }
 
     pub fn push_frame(&mut self, rgba: &[u8]) -> Result<()> {

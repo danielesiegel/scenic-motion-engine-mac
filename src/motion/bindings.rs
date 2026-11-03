@@ -10,18 +10,34 @@ pub fn select_rows(binding: &Binding, row_count: u32, key_row: u32) -> Vec<bool>
     let sel = binding.rows.as_ref();
     let mut out = vec![false; n];
     match sel {
-        None => { for v in &mut out { *v = true; } }
-        Some(RowSelector::Name(name)) => match name {
-            RowSelectorName::All => { for v in &mut out { *v = true; } }
-            RowSelectorName::Even => for i in 0..n { out[i] = i % 2 == 0 },
-            RowSelectorName::Odd  => for i in 0..n { out[i] = i % 2 == 1 },
-            RowSelectorName::KeyRow => {
-                if (key_row as usize) < n { out[key_row as usize] = true; }
-            }
+        None => {
+            out.fill(true);
         }
+        Some(RowSelector::Name(name)) => match name {
+            RowSelectorName::All => {
+                out.fill(true);
+            }
+            RowSelectorName::Even => {
+                for (i, v) in out.iter_mut().enumerate() {
+                    *v = i.is_multiple_of(2);
+                }
+            }
+            RowSelectorName::Odd => {
+                for (i, v) in out.iter_mut().enumerate() {
+                    *v = !i.is_multiple_of(2);
+                }
+            }
+            RowSelectorName::KeyRow => {
+                if (key_row as usize) < n {
+                    out[key_row as usize] = true;
+                }
+            }
+        },
         Some(RowSelector::Indices(ix)) => {
             for &i in ix {
-                if (i as usize) < n { out[i as usize] = true; }
+                if (i as usize) < n {
+                    out[i as usize] = true;
+                }
             }
         }
     }

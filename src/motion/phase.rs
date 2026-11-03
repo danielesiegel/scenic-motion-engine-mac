@@ -13,7 +13,9 @@ pub fn apply_easing(e: Option<Easing>, x: f32) -> f32 {
     match e {
         None => t,
         Some(Easing::Named(n)) => apply_named(n, t),
-        Some(Easing::Bezier { bezier }) => cubic_bezier(t, bezier[0], bezier[1], bezier[2], bezier[3]),
+        Some(Easing::Bezier { bezier }) => {
+            cubic_bezier(t, bezier[0], bezier[1], bezier[2], bezier[3])
+        }
     }
 }
 
@@ -56,10 +58,18 @@ pub fn apply_named(name: EasingName, t: f32) -> f32 {
             }
         }
         EasingName::EaseInExpo => {
-            if t == 0.0 { 0.0 } else { (2.0_f32).powf(10.0 * t - 10.0) }
+            if t == 0.0 {
+                0.0
+            } else {
+                (2.0_f32).powf(10.0 * t - 10.0)
+            }
         }
         EasingName::EaseOutExpo => {
-            if t == 1.0 { 1.0 } else { 1.0 - (2.0_f32).powf(-10.0 * t) }
+            if t == 1.0 {
+                1.0
+            } else {
+                1.0 - (2.0_f32).powf(-10.0 * t)
+            }
         }
         EasingName::EaseInOutExpo => {
             if t == 0.0 {
@@ -115,9 +125,13 @@ pub fn cubic_bezier(x: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
         let u = 1.0 - s;
         let bx = 3.0 * u * u * s * x1 + 3.0 * u * s * s * x2 + s * s * s;
         let dx = bx - t;
-        if dx.abs() < 1e-6 { break; }
+        if dx.abs() < 1e-6 {
+            break;
+        }
         let der = 3.0 * u * u * x1 + 6.0 * u * s * (x2 - x1) + 3.0 * s * s * (1.0 - x2);
-        if der.abs() < 1e-6 { break; }
+        if der.abs() < 1e-6 {
+            break;
+        }
         s = (s - dx / der).clamp(0.0, 1.0);
     }
     let u = 1.0 - s;

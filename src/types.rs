@@ -5,7 +5,7 @@
 //! Any new public type that other modules need goes here, discussed with the orchestrator first.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 // ---------------------------------------------------------------------------
 // Bands + events
@@ -123,7 +123,9 @@ impl ParamValue {
     }
 }
 
-pub type Params = HashMap<String, ParamValue>;
+/// Ordered map so JSON serialization is deterministic. (HashMap iteration order is random, which
+/// breaks byte-stable config roundtrips.)
+pub type Params = BTreeMap<String, ParamValue>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhaseAction {
@@ -186,6 +188,9 @@ pub enum BindingTarget {
     Camera,
 }
 
+// Explicit impl preserves the public signature per the project's "do not
+// change public type signatures in src/types.rs" rule.
+#[allow(clippy::derivable_impls)]
 impl Default for BindingTarget {
     fn default() -> Self {
         BindingTarget::Rows
@@ -200,6 +205,9 @@ pub enum ComposeMode {
     Override,
 }
 
+// Explicit impl preserves the public signature per the project's "do not
+// change public type signatures in src/types.rs" rule.
+#[allow(clippy::derivable_impls)]
 impl Default for ComposeMode {
     fn default() -> Self {
         ComposeMode::Add
@@ -389,8 +397,8 @@ pub struct FeelConfig {
 #[serde(rename_all = "lowercase")]
 pub enum RecordEngine {
     Auto,
-    Native,          // openh264/ffmpeg in-process; the fastest native path
-    Ffmpeg,          // subprocess
+    Native, // openh264/ffmpeg in-process; the fastest native path
+    Ffmpeg, // subprocess
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -420,7 +428,7 @@ pub struct Config {
     pub tickers: Vec<TickerConfig>,
     pub bindings: Vec<Binding>,
     #[serde(rename = "bandThresholds")]
-    pub band_thresholds: HashMap<String, f32>,
+    pub band_thresholds: BTreeMap<String, f32>,
     pub camera: CameraConfig,
     pub feel: FeelConfig,
     pub record: RecordConfig,
@@ -444,7 +452,11 @@ impl Dir {
         }
     }
     pub fn for_row(row: u32) -> Dir {
-        if row % 2 == 0 { Dir::Pos } else { Dir::Neg }
+        if row.is_multiple_of(2) {
+            Dir::Pos
+        } else {
+            Dir::Neg
+        }
     }
 }
 
@@ -462,26 +474,36 @@ pub struct PerGlyphOutput {
 pub struct PathOutput {
     pub dx: f32,
     pub dy: f32,
-    pub scale: f32,         // delta around 0, composed as (1 + scale) multiplier
-    pub rotation: f32,      // degrees
-    pub opacity: f32,       // delta added to 1
-    pub tracking: f32,      // extra px per glyph
+    pub scale: f32,    // delta around 0, composed as (1 + scale) multiplier
+    pub rotation: f32, // degrees
+    pub opacity: f32,  // delta added to 1
+    pub tracking: f32, // extra px per glyph
     /// Each boxed closure takes a glyph index and returns a per-glyph delta.
     pub per_glyph: Option<Box<dyn Fn(i64) -> PerGlyphOutput + Send + Sync>>,
 }
 
 impl PathOutput {
     pub fn is_empty(&self) -> bool {
-        self.dx == 0.0 && self.dy == 0.0 && self.scale == 0.0 && self.rotation == 0.0
-            && self.opacity == 0.0 && self.tracking == 0.0 && self.per_glyph.is_none()
+        self.dx == 0.0
+            && self.dy == 0.0
+            && self.scale == 0.0
+            && self.rotation == 0.0
+            && self.opacity == 0.0
+            && self.tracking == 0.0
+            && self.per_glyph.is_none()
     }
 }
 
 impl Default for PathOutput {
     fn default() -> Self {
         Self {
-            dx: 0.0, dy: 0.0, scale: 0.0, rotation: 0.0,
-            opacity: 0.0, tracking: 0.0, per_glyph: None,
+            dx: 0.0,
+            dy: 0.0,
+            scale: 0.0,
+            rotation: 0.0,
+            opacity: 0.0,
+            tracking: 0.0,
+            per_glyph: None,
         }
     }
 }
@@ -489,8 +511,11 @@ impl Default for PathOutput {
 impl std::fmt::Debug for PathOutput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PathOutput")
-            .field("dx", &self.dx).field("dy", &self.dy).field("scale", &self.scale)
-            .field("rotation", &self.rotation).field("opacity", &self.opacity)
+            .field("dx", &self.dx)
+            .field("dy", &self.dy)
+            .field("scale", &self.scale)
+            .field("rotation", &self.rotation)
+            .field("opacity", &self.opacity)
             .field("tracking", &self.tracking)
             .field("per_glyph", &self.per_glyph.as_ref().map(|_| "<closure>"))
             .finish()
@@ -535,17 +560,31 @@ pub struct RowMotionState {
 
 impl Default for RowMotionState {
     fn default() -> Self {
-        Self { dx: 0.0, dy: 0.0, scale: 0.0, rotation: 0.0, opacity: 0.0, tracking: 0.0, per_glyph: Vec::new() }
+        Self {
+            dx: 0.0,
+            dy: 0.0,
+            scale: 0.0,
+            rotation: 0.0,
+            opacity: 0.0,
+            tracking: 0.0,
+            per_glyph: Vec::new(),
+        }
     }
 }
 
 impl std::fmt::Debug for RowMotionState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RowMotionState")
-            .field("dx", &self.dx).field("dy", &self.dy).field("scale", &self.scale)
-            .field("rotation", &self.rotation).field("opacity", &self.opacity)
+            .field("dx", &self.dx)
+            .field("dy", &self.dy)
+            .field("scale", &self.scale)
+            .field("rotation", &self.rotation)
+            .field("opacity", &self.opacity)
             .field("tracking", &self.tracking)
-            .field("per_glyph", &format_args!("[{} closures]", self.per_glyph.len()))
+            .field(
+                "per_glyph",
+                &format_args!("[{} closures]", self.per_glyph.len()),
+            )
             .finish()
     }
 }
@@ -585,10 +624,10 @@ pub struct FrameState {
 /// Pre-shaped positions for one `scenicsynth` unit at a given font size.
 #[derive(Debug, Clone)]
 pub struct UnitLayout {
-    pub unit: String,            // 'scenicsynth', 11 glyphs
-    pub unit_length: u32,        // 11
-    pub stride: f32,             // px from glyph 0 to glyph 11 (including inter-unit kern)
-    pub unit_pos: Vec<f32>,      // length == unit_length; cumulative x within one unit
+    pub unit: String,       // 'scenicsynth', 11 glyphs
+    pub unit_length: u32,   // 11
+    pub stride: f32,        // px from glyph 0 to glyph 11 (including inter-unit kern)
+    pub unit_pos: Vec<f32>, // length == unit_length; cumulative x within one unit
     pub ascent: f32,
     pub descent: f32,
     pub line_height: f32,

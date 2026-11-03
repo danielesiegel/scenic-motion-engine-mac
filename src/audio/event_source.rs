@@ -74,8 +74,8 @@ pub struct JsonEventSource {
 impl JsonEventSource {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
-        let bytes = fs::read(path)
-            .with_context(|| format!("reading analysis JSON {}", path.display()))?;
+        let bytes =
+            fs::read(path).with_context(|| format!("reading analysis JSON {}", path.display()))?;
         let data: AnalysisData = serde_json::from_slice(&bytes)
             .with_context(|| format!("parsing analysis JSON {}", path.display()))?;
         Ok(Self::from_analysis(data))
@@ -95,7 +95,9 @@ impl JsonEventSource {
         let mut events: HashMap<Band, Vec<TransientEvent>> = HashMap::new();
         let mut bands_order: Vec<Band> = Vec::new();
         for (key, mut arr) in bands.into_iter() {
-            let Some(band) = band_from_key(&key) else { continue };
+            let Some(band) = band_from_key(&key) else {
+                continue;
+            };
             arr.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
             for e in arr.iter_mut() {
                 e.strength = e.strength.clamp(0.0, 1.0);
@@ -152,7 +154,10 @@ impl EventSource for JsonEventSource {
         if threshold <= 0.0 {
             return upto;
         }
-        arr[..upto].iter().filter(|e| e.strength >= threshold).count()
+        arr[..upto]
+            .iter()
+            .filter(|e| e.strength >= threshold)
+            .count()
     }
 
     fn event_at_index(&self, band: Band, index: usize, threshold: f32) -> Option<TransientEvent> {
@@ -274,7 +279,10 @@ impl EventSource for SyntheticEventSource {
         if threshold <= 0.0 {
             return upto;
         }
-        arr[..upto].iter().filter(|e| e.strength >= threshold).count()
+        arr[..upto]
+            .iter()
+            .filter(|e| e.strength >= threshold)
+            .count()
     }
     fn event_at_index(&self, band: Band, index: usize, threshold: f32) -> Option<TransientEvent> {
         let arr = self.get_events(band);

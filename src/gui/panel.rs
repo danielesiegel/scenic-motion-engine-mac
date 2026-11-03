@@ -26,10 +26,10 @@ pub struct ControlPanel {
     bezier: [f32; 4],
 }
 
-pub struct PanelCallbacks {
-    pub on_record: Option<Box<dyn FnMut()>>,
-    pub on_copy_config: Option<Box<dyn FnMut()>>,
-    pub on_reload_analysis: Option<Box<dyn FnMut()>>,
+pub struct PanelCallbacks<'a> {
+    pub on_record: Option<Box<dyn FnMut() + 'a>>,
+    pub on_copy_config: Option<Box<dyn FnMut() + 'a>>,
+    pub on_reload_analysis: Option<Box<dyn FnMut() + 'a>>,
 }
 
 impl Default for ControlPanel {
@@ -158,10 +158,26 @@ impl ControlPanel {
                 egui::CollapsingHeader::new("cubic-bezier override")
                     .default_open(false)
                     .show(ui, |ui| {
-                        ui.add(Slider::new(&mut self.bezier[0], 0.0..=1.0).step_by(0.01).text("x1"));
-                        ui.add(Slider::new(&mut self.bezier[1], -0.5..=1.5).step_by(0.01).text("y1"));
-                        ui.add(Slider::new(&mut self.bezier[2], 0.0..=1.0).step_by(0.01).text("x2"));
-                        ui.add(Slider::new(&mut self.bezier[3], -0.5..=1.5).step_by(0.01).text("y2"));
+                        ui.add(
+                            Slider::new(&mut self.bezier[0], 0.0..=1.0)
+                                .step_by(0.01)
+                                .text("x1"),
+                        );
+                        ui.add(
+                            Slider::new(&mut self.bezier[1], -0.5..=1.5)
+                                .step_by(0.01)
+                                .text("y1"),
+                        );
+                        ui.add(
+                            Slider::new(&mut self.bezier[2], 0.0..=1.0)
+                                .step_by(0.01)
+                                .text("x2"),
+                        );
+                        ui.add(
+                            Slider::new(&mut self.bezier[3], -0.5..=1.5)
+                                .step_by(0.01)
+                                .text("y2"),
+                        );
                         // TODO: extend GlobalEasing with Bezier so this button can actually set it.
                         let _ = ui.button("apply bezier as global easing");
                     });
@@ -282,7 +298,7 @@ impl ControlPanel {
     fn section_band_thresholds(
         &mut self,
         ui: &mut egui::Ui,
-        thresholds: &mut std::collections::HashMap<String, f32>,
+        thresholds: &mut std::collections::BTreeMap<String, f32>,
     ) {
         egui::CollapsingHeader::new("band thresholds")
             .default_open(false)
@@ -300,7 +316,7 @@ impl ControlPanel {
     }
 
     // ---------------- tickers ----------------
-    fn section_tickers(&mut self, ui: &mut egui::Ui, tickers: &mut Vec<TickerConfig>) {
+    fn section_tickers(&mut self, ui: &mut egui::Ui, tickers: &mut [TickerConfig]) {
         egui::CollapsingHeader::new("tickers")
             .default_open(false)
             .show(ui, |ui| {
@@ -337,7 +353,10 @@ impl ControlPanel {
 
                             // step (Option<u32>)
                             let mut step = t.step.unwrap_or(1);
-                            if ui.add(Slider::new(&mut step, 1..=32).text("step")).changed() {
+                            if ui
+                                .add(Slider::new(&mut step, 1..=32).text("step"))
+                                .changed()
+                            {
                                 t.step = Some(step);
                             }
 
@@ -352,7 +371,10 @@ impl ControlPanel {
 
                             // offset (Option<i32>)
                             let mut off = t.offset.unwrap_or(0);
-                            if ui.add(Slider::new(&mut off, -16..=16).text("offset")).changed() {
+                            if ui
+                                .add(Slider::new(&mut off, -16..=16).text("offset"))
+                                .changed()
+                            {
                                 t.offset = Some(off);
                             }
                         });
@@ -361,7 +383,7 @@ impl ControlPanel {
     }
 
     // ---------------- bindings ----------------
-    fn section_bindings(&mut self, ui: &mut egui::Ui, bindings: &mut Vec<Binding>) {
+    fn section_bindings(&mut self, ui: &mut egui::Ui, bindings: &mut [Binding]) {
         egui::CollapsingHeader::new("bindings")
             .default_open(false)
             .show(ui, |ui| {
@@ -395,10 +417,18 @@ impl ControlPanel {
             .default_open(false)
             .show(ui, |ui| {
                 let b: &mut CameraBaseline = &mut camera.baseline;
-                ui.add(Slider::new(&mut b.zoom, 0.1..=4.0).step_by(0.01).text("zoom"));
+                ui.add(
+                    Slider::new(&mut b.zoom, 0.1..=4.0)
+                        .step_by(0.01)
+                        .text("zoom"),
+                );
                 ui.add(Slider::new(&mut b.pan_x, -2000.0..=2000.0).text("panX"));
                 ui.add(Slider::new(&mut b.pan_y, -2000.0..=2000.0).text("panY"));
-                ui.add(Slider::new(&mut b.tilt, -180.0..=180.0).step_by(0.1).text("tilt"));
+                ui.add(
+                    Slider::new(&mut b.tilt, -180.0..=180.0)
+                        .step_by(0.1)
+                        .text("tilt"),
+                );
                 ui.add(Slider::new(&mut camera.row_overshoot, 0..=10).text("rowOvershoot"));
             });
     }
@@ -434,33 +464,54 @@ impl ControlPanel {
                     });
                 record.fps = fps;
 
-                ui.add(
-                    Slider::new(&mut record.video_bitrate_mbps, 2..=80).text("bitrate (Mbps)"),
-                );
+                ui.add(Slider::new(&mut record.video_bitrate_mbps, 2..=80).text("bitrate (Mbps)"));
                 ui.add(Slider::new(&mut record.resolution_multiplier, 1..=4).text("res ×"));
 
                 let mut engine = record.engine;
                 ComboBox::from_label("engine")
                     .selected_text(record_engine_label(engine))
                     .show_ui(ui, |ui| {
-                        for e in [RecordEngine::Auto, RecordEngine::Native, RecordEngine::Ffmpeg] {
+                        for e in [
+                            RecordEngine::Auto,
+                            RecordEngine::Native,
+                            RecordEngine::Ffmpeg,
+                        ] {
                             ui.selectable_value(&mut engine, e, record_engine_label(e));
                         }
                     });
                 record.engine = engine;
 
                 ui.separator();
-                if ui.button("RECORD mp4").clicked() {
+                if ui
+                    .button("RECORD mp4")
+                    .on_hover_text(
+                        "Export the current config to an .mp4 using the selected engine.\n\
+                         Starts at `start (s)`, runs for `duration (s)` at the chosen fps.",
+                    )
+                    .clicked()
+                {
                     if let Some(cb) = callbacks.on_record.as_mut() {
                         cb();
                     }
                 }
-                if ui.button("copy config JSON").clicked() {
+                if ui
+                    .button("copy config JSON")
+                    .on_hover_text(
+                        "Serialize the full Config to JSON and copy it to the clipboard.",
+                    )
+                    .clicked()
+                {
                     if let Some(cb) = callbacks.on_copy_config.as_mut() {
                         cb();
                     }
                 }
-                if ui.button("reload analysis").clicked() {
+                if ui
+                    .button("reload analysis")
+                    .on_hover_text(
+                        "Re-read analysis/<track>.json for the currently-loaded audio file (⌘R).",
+                    )
+                    .clicked()
+                {
                     if let Some(cb) = callbacks.on_reload_analysis.as_mut() {
                         cb();
                     }

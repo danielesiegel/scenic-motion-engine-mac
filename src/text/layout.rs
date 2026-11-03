@@ -116,22 +116,22 @@ pub fn build_unit_layout(loader: &mut FontLoader, size: f32, unit: &str) -> Unit
     // back to the font-agnostic 0.78/0.22 split used in the TS reference.
     let (ascent, descent, line_height) = match (ascent_from_run, descent_from_run) {
         (Some(a), Some(d)) if a > 0.0 && d >= 0.0 => {
-            let lh = line_height_from_run
-                .unwrap_or(line_height)
-                .max(size * 1.2);
+            let lh = line_height_from_run.unwrap_or(line_height).max(size * 1.2);
             (a, d, lh)
         }
         _ => {
             let a = size * 0.78;
             let d = size * 0.22;
-            let lh = line_height_from_run
-                .unwrap_or(line_height)
-                .max(size * 1.2);
+            let lh = line_height_from_run.unwrap_or(line_height).max(size * 1.2);
             (a, d, lh)
         }
     };
 
-    debug_assert_eq!(unit_pos.len(), n, "unit_pos length must equal unit.chars().count()");
+    debug_assert_eq!(
+        unit_pos.len(),
+        n,
+        "unit_pos length must equal unit.chars().count()"
+    );
 
     UnitLayout {
         unit: unit.to_string(),

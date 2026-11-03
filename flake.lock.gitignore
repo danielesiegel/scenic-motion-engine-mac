@@ -1,0 +1,13 @@
+Note on flake.lock
+==================
+
+This repository intentionally ships `flake.nix` without a committed
+`flake.lock`. Generate it locally with:
+
+    nix flake lock
+
+For reproducible builds across machines, commit the resulting
+`flake.lock`. For now it is left to the user to generate so this file
+is a placeholder reminder — it is NOT consumed by git/.gitignore
+automatically. If you want flake.lock excluded from git, add
+`flake.lock` to .gitignore. Otherwise commit it after `nix flake lock`.

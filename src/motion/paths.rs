@@ -53,7 +53,11 @@ fn path_hold(_ctx: &PathContext) -> PathOutput {
 }
 
 fn path_slide_step(ctx: &PathContext) -> PathOutput {
-    let units = ctx.params.get("units").and_then(|v| v.as_f32()).unwrap_or(1.0);
+    let units = ctx
+        .params
+        .get("units")
+        .and_then(|v| v.as_f32())
+        .unwrap_or(1.0);
     let unit_width = ctx
         .params
         .get("unitWidth")
@@ -67,7 +71,11 @@ fn path_slide_step(ctx: &PathContext) -> PathOutput {
 }
 
 fn path_reverse_nudge(ctx: &PathContext) -> PathOutput {
-    let units = ctx.params.get("units").and_then(|v| v.as_f32()).unwrap_or(0.5);
+    let units = ctx
+        .params
+        .get("units")
+        .and_then(|v| v.as_f32())
+        .unwrap_or(0.5);
     let unit_width = ctx
         .params
         .get("unitWidth")
@@ -81,7 +89,11 @@ fn path_reverse_nudge(ctx: &PathContext) -> PathOutput {
 }
 
 fn path_stutter(ctx: &PathContext) -> PathOutput {
-    let count_raw = ctx.params.get("count").and_then(|v| v.as_f32()).unwrap_or(4.0);
+    let count_raw = ctx
+        .params
+        .get("count")
+        .and_then(|v| v.as_f32())
+        .unwrap_or(4.0);
     let count = (count_raw.floor() as i32).max(1) as f32;
     let amplitude = ctx
         .params
@@ -108,13 +120,19 @@ fn path_glyph_jitter(ctx: &PathContext) -> PathOutput {
     let t_frame = (ctx.t * 60.0).floor() as i64;
     PathOutput {
         per_glyph: Some(Box::new(move |glyph_index: i64| {
-            let seed_n = seed_u32(glyph_index.wrapping_mul(1013)
-                .wrapping_add(row.wrapping_mul(7919))
-                .wrapping_add(t_frame));
-            let seed_m = seed_u32(glyph_index.wrapping_mul(7919)
-                .wrapping_add(row.wrapping_mul(1013))
-                .wrapping_add(t_frame)
-                .wrapping_add(1));
+            let seed_n = seed_u32(
+                glyph_index
+                    .wrapping_mul(1013)
+                    .wrapping_add(row.wrapping_mul(7919))
+                    .wrapping_add(t_frame),
+            );
+            let seed_m = seed_u32(
+                glyph_index
+                    .wrapping_mul(7919)
+                    .wrapping_add(row.wrapping_mul(1013))
+                    .wrapping_add(t_frame)
+                    .wrapping_add(1),
+            );
             let n = hash01(seed_n);
             let m = hash01(seed_m);
             PerGlyphOutput {
@@ -256,7 +274,11 @@ fn path_camera_zoom_pulse(ctx: &PathContext) -> PathOutput {
         .get("amplitude")
         .and_then(|v| v.as_f32())
         .unwrap_or(0.08);
-    let strength_mul = if ctx.strength != 0.0 { ctx.strength } else { 1.0 };
+    let strength_mul = if ctx.strength != 0.0 {
+        ctx.strength
+    } else {
+        1.0
+    };
     let amp = amp_base * strength_mul;
     PathOutput {
         scale: (ctx.eased_progress * PI).sin() * amp,

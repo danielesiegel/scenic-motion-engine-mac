@@ -270,7 +270,12 @@ fn decode_file(path: &Path) -> Result<(Vec<f32>, u32)> {
     }
 
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .with_context(|| format!("probing audio file {}", path.display()))?;
 
     let mut format = probed.format;
@@ -282,11 +287,7 @@ fn decode_file(path: &Path) -> Result<(Vec<f32>, u32)> {
     let file_sr = codec_params
         .sample_rate
         .ok_or_else(|| anyhow!("missing sample rate in codec params"))?;
-    let src_channels = codec_params
-        .channels
-        .map(|c| c.count())
-        .unwrap_or(2)
-        .max(1);
+    let src_channels = codec_params.channels.map(|c| c.count()).unwrap_or(2).max(1);
 
     let mut decoder = symphonia::default::get_codecs()
         .make(&codec_params, &DecoderOptions::default())
@@ -357,7 +358,8 @@ fn append_interleaved_stereo(out: &mut Vec<f32>, buf: &AudioBufferRef<'_>, src_c
             (v.inner() as f32 - 8_388_608.0) / 8_388_608.0
         }),
         AudioBufferRef::U32(b) => {
-            handle!(b, |v: u32| (v as f64 - 2_147_483_648.0) as f32 / 2_147_483_648.0)
+            handle!(b, |v: u32| (v as f64 - 2_147_483_648.0) as f32
+                / 2_147_483_648.0)
         }
         AudioBufferRef::S8(b) => handle!(b, |v: i8| v as f32 / 128.0),
         AudioBufferRef::S16(b) => handle!(b, |v: i16| v as f32 / 32768.0),
@@ -372,7 +374,12 @@ fn append_interleaved_stereo(out: &mut Vec<f32>, buf: &AudioBufferRef<'_>, src_c
 // Audio callback — fills `output` (interleaved by `out_channels`) with f32.
 // ---------------------------------------------------------------------------
 
-fn fill_f32(output: &mut [f32], out_channels: usize, samples: &Arc<Vec<f32>>, state: &Mutex<PlayState>) {
+fn fill_f32(
+    output: &mut [f32],
+    out_channels: usize,
+    samples: &Arc<Vec<f32>>,
+    state: &Mutex<PlayState>,
+) {
     // Zero first — if we return early the device gets silence.
     for s in output.iter_mut() {
         *s = 0.0;

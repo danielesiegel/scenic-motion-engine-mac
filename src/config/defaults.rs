@@ -2,7 +2,7 @@
 //!
 //! Reference: ../../scenic-motion-engine-web/src/config/defaults.ts
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::types::*;
 
@@ -23,11 +23,11 @@ fn action(path: &str, p: Params, duration: f32, easing: EasingName) -> PhaseActi
 }
 
 pub fn default_config() -> Config {
-    let mut band_thresholds = HashMap::new();
-    band_thresholds.insert("kick".into(),  0.85);
+    let mut band_thresholds = BTreeMap::new();
+    band_thresholds.insert("kick".into(), 0.85);
     band_thresholds.insert("snare".into(), 0.60);
-    band_thresholds.insert("mid".into(),   0.50);
-    band_thresholds.insert("hats".into(),  0.40);
+    band_thresholds.insert("mid".into(), 0.50);
+    band_thresholds.insert("hats".into(), 0.40);
 
     let tickers = vec![
         // Row motion drivers (one per band so the different row-parities feel in-sync but distinct).
@@ -260,7 +260,12 @@ pub fn default_config() -> Config {
         bindings,
         band_thresholds,
         camera: CameraConfig {
-            baseline: CameraBaseline { zoom: 1.0, pan_x: 0.0, pan_y: 0.0, tilt: -5.0 },
+            baseline: CameraBaseline {
+                zoom: 1.0,
+                pan_x: 0.0,
+                pan_y: 0.0,
+                tilt: -5.0,
+            },
             row_overshoot: 3,
         },
         feel: FeelConfig {
