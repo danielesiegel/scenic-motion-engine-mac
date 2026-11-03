@@ -34,7 +34,7 @@ cosmic-text = "0.12"
 glyphon = "0.6"
 
 # --- Audio ---
-cpal = "0.15"
+cpal = "0.17"
 symphonia = { version = "0.5", features = ["wav", "pcm", "mp3", "flac"] }
 rtrb = "0.3"                                             # lock-free audio ring
 midir = "0.10"                                           # cross-platform MIDI (CoreMIDI on macOS)
