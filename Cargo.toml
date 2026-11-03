@@ -30,7 +30,7 @@ winit = "0.30"
 pollster = "0.4"
 
 # --- Text ---
-cosmic-text = "0.12"
+cosmic-text = "0.19"
 glyphon = "0.6"
 
 # --- Audio ---
