@@ -602,10 +602,12 @@ pub struct RecordConfig {
 pub struct DebugConfig {
     /// Show the on-screen heads-up display.
     pub hud: bool,
-    /// Whether the Preferences window is open.
+    /// Whether the Preferences window is open. Persisted across launches so the
+    /// window reopens in the state the user left it (closes #23).
     #[serde(default)]
     pub prefs_open: bool,
-    /// Whether the About window is open.
+    /// Whether the About window is open. Persisted across launches so the window
+    /// reopens in the state the user left it (closes #23).
     #[serde(default)]
     pub about_open: bool,
 }
