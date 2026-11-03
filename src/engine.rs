@@ -25,6 +25,12 @@ use std::sync::Arc;
 // parallel path scales roughly linearly with the number of selected rows.
 const PARALLEL_ROW_THRESHOLD: u32 = 8;
 
+// Secondary gate on per-row workload: `evaluate_binding_contribution` cost is
+// dominated by replaying past events. At low t (few/no past events) each row's
+// work is <1µs and fork/join swamps the gain — stay serial. Threshold chosen so
+// `evaluate_t_start` (t=0.1, near-empty past list) uses the serial path.
+const PARALLEL_EVENT_THRESHOLD: usize = 32;
+
 pub struct EngineInputs<'a> {
     pub t: f32,
     pub config: &'a Config,
@@ -347,7 +353,8 @@ fn evaluate_binding_contribution(
     // (action, config.feel), which are stable across events; hoisting lifts
     // ~N RwLock acquisitions on the paths registry down to num_actions (1-4).
     let num_actions = sequence.actions.len();
-    let resolved: SmallVec<[(Option<PathFn>, f32, Option<Easing>); 4]> = sequence
+    type ResolvedAction = (Option<PathFn>, f32, Option<Easing>);
+    let resolved: SmallVec<[ResolvedAction; 4]> = sequence
         .actions
         .iter()
         .map(|action| {
@@ -688,7 +695,15 @@ pub fn evaluate(inp: EngineInputs<'_>) -> FrameState {
         // independent. We collect outputs and compose serially — composition
         // writes to disjoint `rows[idx]` slots but keeping it serial preserves
         // deterministic FP order relative to the serial path.
-        let per_row: Vec<Option<PathOutput>> = if row_count >= PARALLEL_ROW_THRESHOLD {
+        //
+        // Gate on PAST-EVENT work too: at low t the per-row path replays almost
+        // nothing (binary search finds 0..1 events), so fork/join dominates. If
+        // there are < PARALLEL_EVENT_THRESHOLD past events to replay per row we
+        // stay serial.
+        let past_events = count_le_by_t(&filtered, t);
+        let parallel_ok =
+            row_count >= PARALLEL_ROW_THRESHOLD && past_events >= PARALLEL_EVENT_THRESHOLD;
+        let per_row: Vec<Option<PathOutput>> = if parallel_ok {
             (0..row_count)
                 .into_par_iter()
                 .map(|row_index| {
