@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>scenic motion engine</title>
+  <meta name="description" content="Audio-reactive looping marquee for macOS. GPU text, native audio, deterministic engine, MP4 export.">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="topnav">
+    <div class="container nav-inner">
+      <a class="brand" href="#top">
+        <img src="favicon.svg" alt="" width="28" height="28">
+        <span>scenic motion engine</span>
+      </a>
+      <a class="nav-link" href="https://github.com/danielesiegel/scenic-motion-engine-mac">GitHub</a>
+    </div>
+  </nav>
+
+  <main id="top">
+    <section class="hero">
+      <div class="container">
+        <h1>scenic motion engine</h1>
+        <p class="pitch">Audio-reactive looping marquee for macOS. Four-band transient detection drives per-row scrolling, camera moves, and spotlight repetition.</p>
+        <p class="actions">
+          <a class="btn btn-primary" href="https://github.com/danielesiegel/scenic-motion-engine-mac/releases/latest">Download latest release</a>
+          <a class="btn btn-ghost" href="https://github.com/danielesiegel/scenic-motion-engine-mac">View source</a>
+        </p>
+        <p class="meta">Native macOS build. GPU-accelerated. Deterministic. No telemetry.</p>
+      </div>
+    </section>
+
+    <section class="features">
+      <div class="container">
+        <h2>What's inside</h2>
+        <div class="grid">
+          <article class="card accent-blue">
+            <h3>GPU text</h3>
+            <p>Glyph atlas on <code>wgpu</code> via glyphon. Thousands of animated characters at 60 fps.</p>
+          </article>
+          <article class="card accent-green">
+            <h3>Native audio</h3>
+            <p>Core Audio capture with four-band transient detection — kick, snare, mid, hats.</p>
+          </article>
+          <article class="card accent-orange">
+            <h3>Deterministic engine</h3>
+            <p><code>evaluate(EngineInputs) -&gt; FrameState</code> is a pure function of time. No mutable state.</p>
+          </article>
+          <article class="card accent-red">
+            <h3>Spotlight repetition</h3>
+            <p>Key-word traversal across rows with configurable frequency, phase offset, and anchor.</p>
+          </article>
+          <article class="card accent-blue">
+            <h3>Camera moves</h3>
+            <p>Zoom-focused, pan, tilt — all driven by the same ticker system that moves the rows.</p>
+          </article>
+          <article class="card accent-green">
+            <h3>MP4 export</h3>
+            <p>Offline render at any resolution multiplier. VideoToolbox-backed H.264 encode.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="shot">
+      <div class="container">
+        <h2>Screenshot</h2>
+        <img src="../docs/screenshots/app.png" alt="scenic motion engine application window" loading="lazy">
+      </div>
+    </section>
+
+    <section class="code">
+      <div class="container">
+        <h2>Config, by default</h2>
+        <p class="code-caption">A trimmed excerpt from <code>default_config()</code>. The whole config — rows, tickers, bindings, camera — is one serializable value.</p>
+<pre><code>pub fn default_config() -&gt; Config {
+    let tickers = vec![
+        TickerConfig {
+            id: "kick-even-slide".into(),
+            band: Band::Kick,
+            modulo: 1,
+            strength_threshold: Some(0.25),
+            ..
+        },
+        TickerConfig {
+            id: "kick-camera-zoompan".into(),
+            band: Band::Kick,
+            modulo: 4,
+            step: Some(4),
+            step_offset: Some(3),
+            ..
+        },
+    ];
+
+    Config {
+        text: TextConfig {
+            unit: "scenicsynth".into(),
+            key: "scenicsynths".into(),
+            case: TextCase::Lower,
+        },
+        layout: LayoutConfig {
+            font_size_px: 72.0,
+            row_stagger_px: 0.33,
+            ..
+        },
+        canvas: CanvasConfig {
+            width: 1920, height: 1080,
+            dpr: 2.0, render_scale: 2.0,
+        },
+        camera: CameraConfig {
+            baseline: CameraBaseline {
+                zoom: 1.0, pan_x: 0.0, pan_y: 0.0, tilt: -5.0,
+            },
+            row_overshoot: 3,
+        },
+        record: RecordConfig {
+            start_at: 0.0, duration: 10.0,
+            fps: 60, video_bitrate_mbps: 20,
+            resolution_multiplier: 2,
+            engine: RecordEngine::Auto,
+        },
+        ..
+    }
+}</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <p>
+        <a href="https://github.com/danielesiegel/scenic-motion-engine-mac">github.com/danielesiegel/scenic-motion-engine-mac</a>
+      </p>
+      <p class="small">Native macOS port of <a href="https://github.com/danielesiegel/scenic-motion-engine-web">scenic-motion-engine-web</a>.</p>
+    </div>
+  </footer>
+</body>
+</html>

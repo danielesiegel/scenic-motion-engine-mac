@@ -219,6 +219,14 @@ impl ScenicApp {
             if i.modifiers.mac_cmd && i.key_pressed(egui::Key::Period) {
                 actions.stop = true;
             }
+            // H = toggle HUD (bare, no modifiers — Cmd+H is reserved for Mac hide).
+            if i.key_pressed(egui::Key::H) && !i.modifiers.mac_cmd && !i.modifiers.shift {
+                actions.toggle_hud = true;
+            }
+            // L = toggle loop (bare, no modifiers).
+            if i.key_pressed(egui::Key::L) && !i.modifiers.mac_cmd && !i.modifiers.shift {
+                actions.toggle_loop = true;
+            }
         });
         actions
     }
@@ -435,6 +443,8 @@ struct ShortcutActions {
     pick_audio: bool,
     reload_analysis: bool,
     stop: bool,
+    toggle_hud: bool,
+    toggle_loop: bool,
 }
 
 impl eframe::App for ScenicApp {
@@ -458,6 +468,12 @@ impl eframe::App for ScenicApp {
         }
         if actions.stop {
             self.stop_to_start_at();
+        }
+        if actions.toggle_hud {
+            self.config.debug.hud = !self.config.debug.hud;
+        }
+        if actions.toggle_loop {
+            self.transport.loop_enabled = !self.transport.loop_enabled;
         }
 
         // ⌘S = persist the live Config to disk now.

@@ -1,0 +1,3 @@
+# Shell completions and manpage for `render`
+
+Install the completion for your shell by copying the matching file into the right location: for bash, source `render.bash` from your `~/.bashrc` or drop it in `/usr/local/etc/bash_completion.d/`; for zsh, copy `render.zsh` to a directory on your `$fpath` as `_render` (e.g. `/usr/local/share/zsh/site-functions/_render`) and run `compinit`; for fish, copy `render.fish` to `~/.config/fish/completions/render.fish`. To install the manpage, copy `../docs/man/render.1` to `/usr/local/share/man/man1/` (or any directory on `$MANPATH`) and then run `mandb` (Linux) or just invoke `man render` on macOS.

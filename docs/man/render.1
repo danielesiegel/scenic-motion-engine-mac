@@ -1,0 +1,103 @@
+.\" Manpage for render (scenic-motion-engine offline renderer)
+.TH RENDER 1 "2026-11-02" "scenic-motion-engine" "User Commands"
+.SH NAME
+render \- offline MP4 export CLI for scenic-motion-engine
+.SH SYNOPSIS
+.B render
+[\fB\-\-audio\fR \fIPATH\fR]
+[\fB\-\-analysis\fR \fIPATH\fR]
+\fB\-\-out\fR \fIPATH\fR
+[\fB\-\-start\fR \fISECONDS\fR]
+[\fB\-\-duration\fR \fISECONDS\fR]
+[\fB\-\-fps\fR \fIN\fR]
+[\fB\-\-width\fR \fIPX\fR]
+[\fB\-\-height\fR \fIPX\fR]
+[\fB\-\-fonts\fR \fIDIR\fR]
+.SH DESCRIPTION
+.B render
+drives the scenic-motion-engine offline renderer, producing an MP4 file by
+evaluating a motion graph against an event source and muxing the result with
+an optional audio track.
+.PP
+If
+.B \-\-analysis
+is omitted, a synthetic 120-BPM event source is substituted so a render can
+be produced without a prior analysis pass. Only
+.B \-\-out
+is strictly required.
+.SH OPTIONS
+.TP
+.BR \-\-audio " " \fIPATH\fR
+Input audio track (wav/mp3/flac/aac/m4a/ogg). Participates in the final mux
+only; it does not drive motion events.
+.TP
+.BR \-\-analysis " " \fIPATH\fR
+JSON analysis file produced by the analyzer binary. When omitted, a
+synthetic 120-BPM source is used.
+.TP
+.BR \-\-out ", " \-o " " \fIPATH\fR
+Output MP4 path. Required. Parent directories are created as needed.
+.TP
+.BR \-\-start " " \fISECONDS\fR
+Start offset into the event source, in seconds. Default:
+.BR 0 .
+.TP
+.BR \-\-duration " " \fISECONDS\fR
+Render length in seconds. Default:
+.BR 10 .
+.TP
+.BR \-\-fps " " \fIN\fR
+Frames per second. Default:
+.BR 60 .
+.TP
+.BR \-\-width " " \fIPX\fR
+Frame width in pixels. Default:
+.BR 1920 .
+.TP
+.BR \-\-height " " \fIPX\fR
+Frame height in pixels. Default:
+.BR 1080 .
+.TP
+.BR \-\-fonts " " \fIDIR\fR
+Directory to scan for fonts. Default:
+.BR assets/fonts .
+.TP
+.BR \-h ", " \-\-help
+Print the built-in usage summary and exit.
+.SH EXAMPLES
+.PP
+Render ten seconds with a precomputed analysis file:
+.PP
+.RS
+.nf
+render \\
+    --audio    assets/audio/kafkaesque.wav \\
+    --analysis analysis/kafkaesque.json \\
+    --out      renders/out.mp4 \\
+    --start 0 --duration 10 \\
+    --fps 60 --width 1920 --height 1080
+.fi
+.RE
+.PP
+Quick preview from the synthetic 120-BPM source:
+.PP
+.RS
+.nf
+render --out renders/preview.mp4 --duration 4 --fps 30
+.fi
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Runtime failure (missing input, I/O error, render error).
+.TP
+.B 2
+Argument parse error.
+.SH SEE ALSO
+.BR ffmpeg (1),
+.BR analyze (1)
+.SH AUTHORS
+scenic-motion-engine contributors.

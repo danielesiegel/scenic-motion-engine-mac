@@ -1,0 +1,100 @@
+name: Bug Report
+description: Report a defect in scenic-motion-engine-mac
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please provide enough detail for a reliable repro.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One-line description of the issue.
+      placeholder: "Rendering stutters when animating N scenes concurrently"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: e.g. 14.5 (Sonoma), 15.0 (Sequoia)
+      placeholder: "15.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: chip
+    attributes:
+      label: Apple Silicon / Intel chip
+      options:
+        - Apple M1
+        - Apple M1 Pro
+        - Apple M1 Max
+        - Apple M1 Ultra
+        - Apple M2
+        - Apple M2 Pro
+        - Apple M2 Max
+        - Apple M2 Ultra
+        - Apple M3
+        - Apple M3 Pro
+        - Apple M3 Max
+        - Apple M4
+        - Apple M4 Pro
+        - Apple M4 Max
+        - Intel x86_64
+        - Other (specify in notes)
+    validations:
+      required: true
+
+  - type: input
+    id: rust
+    attributes:
+      label: Rust version
+      description: Output of `rustc --version`
+      placeholder: "rustc 1.82.0 (f6e511eec 2024-10-15)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, deterministic steps. Include commands and inputs.
+      placeholder: |
+        1. `cargo run --release --example foo`
+        2. Trigger X
+        3. Observe Y
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / backtrace
+      description: Paste relevant stderr, panic output, or `RUST_BACKTRACE=1` traces.
+      render: shell
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional notes
+      description: Anything else — screenshots, workarounds, suspected cause.
