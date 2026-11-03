@@ -1,6 +1,4 @@
-//! egui control panel. Mirrors the TypeScript Tweakpane 1:1.
-//!
-//! Reference: ../../scenicsynths/src/preview/gui.ts
+//! egui control panel. Polished to feel like a macOS inspector pane (Logic / Final Cut style).
 //!
 //! Contract:
 //! - `ControlPanel::ui(&mut self, ui, config, callbacks)` renders the side panel. All controls
@@ -12,7 +10,40 @@ use crate::types::{
     LayoutConfig, MiddleTag, PhaseAction, RecordConfig, RecordEngine, RowVelocityShape, TextCase,
     TextConfig, TickerConfig,
 };
-use egui::{ComboBox, Slider};
+use egui::{Color32, ComboBox, RichText, Slider};
+
+// -------------------------------------------------------------------
+// Visual constants (approximate macOS inspector feel)
+// -------------------------------------------------------------------
+
+/// Width of the left label column in dense slider rows (px).
+const LABEL_COL_WIDTH: f32 = 112.0;
+/// Fixed width for ComboBox dropdowns so they align visually.
+const COMBO_WIDTH: f32 = 180.0;
+/// Vertical padding above section separators.
+const SECTION_PAD: f32 = 4.0;
+
+/// macOS-ish selection blue used for the primary record button.
+const SELECTION_BLUE: Color32 = Color32::from_rgb(0x3A, 0x7A, 0xFF);
+
+fn band_color(band: Band) -> Color32 {
+    match band {
+        Band::Kick => Color32::from_rgb(0x3A, 0x7A, 0xFF),  // blue
+        Band::Snare => Color32::from_rgb(0x44, 0xCC, 0x88), // green
+        Band::Mid => Color32::from_rgb(0xFF, 0xAA, 0x33),   // orange
+        Band::Hats => Color32::from_rgb(0xFF, 0x55, 0x66),  // red
+    }
+}
+
+fn band_from_str(s: &str) -> Option<Band> {
+    match s {
+        "kick" => Some(Band::Kick),
+        "snare" => Some(Band::Snare),
+        "mid" => Some(Band::Mid),
+        "hats" => Some(Band::Hats),
+        _ => None,
+    }
+}
 
 // -------------------------------------------------------------------
 // Public API
@@ -49,10 +80,9 @@ impl ControlPanel {
         }
 
         egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
+            .auto_shrink([false; 2])
             .show(ui, |ui| {
                 ui.heading("scenicsynths");
-                ui.separator();
 
                 self.section_feel(ui, &mut config.feel);
                 self.section_layout(ui, &mut config.layout, &mut config.canvas.render_scale);
@@ -64,124 +94,179 @@ impl ControlPanel {
                 self.section_bindings(ui, &mut config.bindings);
                 self.section_camera(ui, &mut config.camera);
                 self.section_record(ui, &mut config.record, callbacks);
+
+                // Debug last, with a thin separator above (item 11).
+                ui.add_space(SECTION_PAD);
+                ui.separator();
+                ui.add_space(SECTION_PAD);
                 self.section_debug(ui, &mut config.debug, callbacks);
             });
     }
 
     // ---------------- feel ----------------
     fn section_feel(&mut self, ui: &mut egui::Ui, feel: &mut FeelConfig) {
-        egui::CollapsingHeader::new("feel")
-            .default_open(true)
-            .show(ui, |ui| {
-                // preset
-                let mut preset = feel.preset;
-                let preset_label = feel_preset_label(preset);
-                ComboBox::from_label("preset")
-                    .selected_text(preset_label)
-                    .show_ui(ui, |ui| {
-                        for p in [
-                            FeelPreset::Custom,
-                            FeelPreset::Default,
-                            FeelPreset::Snappy,
-                            FeelPreset::Smooth,
-                            FeelPreset::Punchy,
-                            FeelPreset::Glacial,
-                            FeelPreset::Bouncy,
-                        ] {
-                            ui.selectable_value(&mut preset, p, feel_preset_label(p));
-                        }
-                    });
-                if preset != feel.preset {
-                    feel.preset = preset;
-                    apply_preset(feel, preset);
-                }
+        section_header(ui, "feel", true, |ui| {
+            // preset
+            let mut preset = feel.preset;
+            let preset_label = feel_preset_label(preset);
+            ComboBox::from_label("preset")
+                .width(COMBO_WIDTH)
+                .selected_text(preset_label)
+                .show_ui(ui, |ui| {
+                    for p in [
+                        FeelPreset::Custom,
+                        FeelPreset::Default,
+                        FeelPreset::Snappy,
+                        FeelPreset::Smooth,
+                        FeelPreset::Punchy,
+                        FeelPreset::Glacial,
+                        FeelPreset::Bouncy,
+                    ] {
+                        ui.selectable_value(&mut preset, p, feel_preset_label(p));
+                    }
+                });
+            if preset != feel.preset {
+                feel.preset = preset;
+                apply_preset(feel, preset);
+            }
 
-                // horizontal scale
-                ui.add(
-                    Slider::new(&mut feel.horizontal_scale, 0.0..=4.0)
-                        .step_by(0.01)
-                        .text("horizontal ×"),
-                );
+            egui::Grid::new("feel-sliders")
+                .num_columns(2)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    dense_slider(
+                        ui,
+                        "horizontal x",
+                        Slider::new(&mut feel.horizontal_scale, 0.0..=4.0)
+                            .step_by(0.01)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "horizontal x: multiplies every horizontal motion delta globally (rows + camera pan)",
+                    );
+                    ui.end_row();
+                });
 
-                // row velocity shape
-                let mut shape = feel.row_velocity_shape;
-                ComboBox::from_label("row vel curve")
-                    .selected_text(row_velocity_shape_label(shape))
-                    .show_ui(ui, |ui| {
-                        for s in [
-                            RowVelocityShape::Flat,
-                            RowVelocityShape::U,
-                            RowVelocityShape::InvertedU,
-                            RowVelocityShape::Linear,
-                        ] {
-                            ui.selectable_value(&mut shape, s, row_velocity_shape_label(s));
-                        }
-                    });
-                if shape != feel.row_velocity_shape {
-                    feel.row_velocity_shape = shape;
-                    feel.preset = FeelPreset::Custom;
-                }
+            // row velocity shape
+            let mut shape = feel.row_velocity_shape;
+            ComboBox::from_label("row vel curve")
+                .width(COMBO_WIDTH)
+                .selected_text(row_velocity_shape_label(shape))
+                .show_ui(ui, |ui| {
+                    for s in [
+                        RowVelocityShape::Flat,
+                        RowVelocityShape::U,
+                        RowVelocityShape::InvertedU,
+                        RowVelocityShape::Linear,
+                    ] {
+                        ui.selectable_value(&mut shape, s, row_velocity_shape_label(s));
+                    }
+                });
+            if shape != feel.row_velocity_shape {
+                feel.row_velocity_shape = shape;
+                feel.preset = FeelPreset::Custom;
+            }
 
-                ui.add(
-                    Slider::new(&mut feel.row_velocity_edge_scale, 0.25..=4.0)
-                        .step_by(0.05)
-                        .text("edge ×"),
-                );
+            egui::Grid::new("feel-sliders-2")
+                .num_columns(2)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    dense_slider(
+                        ui,
+                        "edge x",
+                        Slider::new(&mut feel.row_velocity_edge_scale, 0.25..=4.0)
+                            .step_by(0.05)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "edge x: scales the velocity curve at edge rows relative to center rows",
+                    );
+                    ui.end_row();
 
-                let ds_before = feel.duration_scale;
-                ui.add(
-                    Slider::new(&mut feel.duration_scale, 0.1..=3.0)
-                        .step_by(0.01)
-                        .text("duration scale"),
-                );
-                if (feel.duration_scale - ds_before).abs() > f32::EPSILON {
-                    feel.preset = FeelPreset::Custom;
-                }
+                    let ds_before = feel.duration_scale;
+                    dense_slider(
+                        ui,
+                        "duration scale",
+                        Slider::new(&mut feel.duration_scale, 0.1..=3.0)
+                            .step_by(0.01)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "duration scale: multiplies every action's duration globally",
+                    );
+                    ui.end_row();
+                    if (feel.duration_scale - ds_before).abs() > f32::EPSILON {
+                        feel.preset = FeelPreset::Custom;
+                    }
+                });
 
-                // global easing
-                let mut ge = feel.global_easing;
-                ComboBox::from_label("global easing")
-                    .selected_text(global_easing_label(ge))
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut ge, GlobalEasing::Auto, "auto");
-                        for e in ALL_EASING_NAMES {
-                            let v = GlobalEasing::Named(e);
-                            ui.selectable_value(&mut ge, v, easing_name_label(e));
-                        }
-                    });
-                if ge != feel.global_easing {
-                    feel.global_easing = ge;
-                    feel.preset = FeelPreset::Custom;
-                }
+            // global easing
+            let mut ge = feel.global_easing;
+            ComboBox::from_label("global easing")
+                .width(COMBO_WIDTH)
+                .selected_text(global_easing_label(ge))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut ge, GlobalEasing::Auto, "auto");
+                    for e in ALL_EASING_NAMES {
+                        let v = GlobalEasing::Named(e);
+                        ui.selectable_value(&mut ge, v, easing_name_label(e));
+                    }
+                });
+            if ge != feel.global_easing {
+                feel.global_easing = ge;
+                feel.preset = FeelPreset::Custom;
+            }
 
-                // cubic-bezier override (collapsing, default collapsed)
-                egui::CollapsingHeader::new("cubic-bezier override")
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        ui.add(
-                            Slider::new(&mut self.bezier[0], 0.0..=1.0)
-                                .step_by(0.01)
-                                .text("x1"),
-                        );
-                        ui.add(
-                            Slider::new(&mut self.bezier[1], -0.5..=1.5)
-                                .step_by(0.01)
-                                .text("y1"),
-                        );
-                        ui.add(
-                            Slider::new(&mut self.bezier[2], 0.0..=1.0)
-                                .step_by(0.01)
-                                .text("x2"),
-                        );
-                        ui.add(
-                            Slider::new(&mut self.bezier[3], -0.5..=1.5)
-                                .step_by(0.01)
-                                .text("y2"),
-                        );
-                        // TODO: extend GlobalEasing with Bezier so this button can actually set it.
-                        let _ = ui.button("apply bezier as global easing");
-                    });
-            });
+            // cubic-bezier override (collapsing, default collapsed)
+            egui::CollapsingHeader::new("cubic-bezier override")
+                .default_open(false)
+                .show(ui, |ui| {
+                    egui::Grid::new("feel-bezier")
+                        .num_columns(2)
+                        .spacing([8.0, 4.0])
+                        .show(ui, |ui| {
+                            dense_slider(
+                                ui,
+                                "x1",
+                                Slider::new(&mut self.bezier[0], 0.0..=1.0)
+                                    .step_by(0.01)
+                                    .custom_formatter(|n, _| format!("{:.2}", n))
+                                    .text(""),
+                                "cubic-bezier x1 (first control point x)",
+                            );
+                            ui.end_row();
+                            dense_slider(
+                                ui,
+                                "y1",
+                                Slider::new(&mut self.bezier[1], -0.5..=1.5)
+                                    .step_by(0.01)
+                                    .custom_formatter(|n, _| format!("{:.2}", n))
+                                    .text(""),
+                                "cubic-bezier y1 (first control point y)",
+                            );
+                            ui.end_row();
+                            dense_slider(
+                                ui,
+                                "x2",
+                                Slider::new(&mut self.bezier[2], 0.0..=1.0)
+                                    .step_by(0.01)
+                                    .custom_formatter(|n, _| format!("{:.2}", n))
+                                    .text(""),
+                                "cubic-bezier x2 (second control point x)",
+                            );
+                            ui.end_row();
+                            dense_slider(
+                                ui,
+                                "y2",
+                                Slider::new(&mut self.bezier[3], -0.5..=1.5)
+                                    .step_by(0.01)
+                                    .custom_formatter(|n, _| format!("{:.2}", n))
+                                    .text(""),
+                                "cubic-bezier y2 (second control point y)",
+                            );
+                            ui.end_row();
+                        });
+                    // TODO: extend GlobalEasing with Bezier so this button can actually set it.
+                    let _ = ui.button("apply bezier as global easing");
+                });
+        });
     }
 
     // ---------------- layout ----------------
@@ -191,107 +276,178 @@ impl ControlPanel {
         layout: &mut LayoutConfig,
         render_scale: &mut f32,
     ) {
-        egui::CollapsingHeader::new("layout")
-            .default_open(false)
-            .show(ui, |ui| {
-                ui.add(Slider::new(&mut layout.font_size_px, 12.0..=220.0).text("fontSizePx"));
-                ui.add(Slider::new(&mut layout.leading_px, 0.0..=220.0).text("leadingPx"));
-                ui.add(
-                    Slider::new(&mut layout.rotation_deg, -45.0..=45.0)
-                        .step_by(0.1)
-                        .text("rotationDeg"),
-                );
-                ui.add(
-                    Slider::new(&mut layout.row_stagger_px, 0.0..=1.0)
-                        .step_by(0.01)
-                        .text("rowStaggerPx"),
-                );
-                ui.add(Slider::new(&mut layout.margin_px, 0.0..=240.0).text("marginPx"));
-                ui.add(
-                    Slider::new(render_scale, 1.0..=4.0)
-                        .step_by(1.0)
-                        .text("renderScale (live)"),
-                );
-            });
+        section_header(ui, "layout", false, |ui| {
+            egui::Grid::new("layout-sliders")
+                .num_columns(2)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    dense_slider(
+                        ui,
+                        "fontSizePx",
+                        Slider::new(&mut layout.font_size_px, 12.0..=220.0)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "font size in pixels at the base canvas resolution",
+                    );
+                    ui.end_row();
+                    dense_slider(
+                        ui,
+                        "leadingPx",
+                        Slider::new(&mut layout.leading_px, 0.0..=220.0)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "vertical spacing between rows (in base pixels)",
+                    );
+                    ui.end_row();
+                    dense_slider(
+                        ui,
+                        "rotationDeg",
+                        Slider::new(&mut layout.rotation_deg, -45.0..=45.0)
+                            .step_by(0.1)
+                            .suffix("\u{00B0}")
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "whole-canvas rotation around center, in degrees",
+                    );
+                    ui.end_row();
+                    dense_slider(
+                        ui,
+                        "rowStaggerPx",
+                        Slider::new(&mut layout.row_stagger_px, 0.0..=1.0)
+                            .step_by(0.01)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "horizontal offset per row for a staggered look (fraction of unit width)",
+                    );
+                    ui.end_row();
+                    dense_slider(
+                        ui,
+                        "marginPx",
+                        Slider::new(&mut layout.margin_px, 0.0..=240.0)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "outer margin around all rows (base pixels)",
+                    );
+                    ui.end_row();
+                    dense_slider(
+                        ui,
+                        "renderScale (live)",
+                        Slider::new(render_scale, 1.0..=4.0).step_by(1.0).text(""),
+                        "live GPU render supersampling multiplier",
+                    );
+                    ui.end_row();
+                });
+        });
     }
 
     // ---------------- colors ----------------
     fn section_colors(&mut self, ui: &mut egui::Ui, colors: &mut ColorConfig) {
-        egui::CollapsingHeader::new("colors")
-            .default_open(false)
-            .show(ui, |ui| {
-                rgb_edit(ui, "background", &mut colors.background);
-                rgb_edit(ui, "dim", &mut colors.dim);
-                rgb_edit(ui, "key", &mut colors.key);
-            });
+        section_header(ui, "colors", false, |ui| {
+            rgb_edit(ui, "background", &mut colors.background);
+            rgb_edit(ui, "dim", &mut colors.dim);
+            rgb_edit(ui, "key", &mut colors.key);
+        });
     }
 
     // ---------------- spotlight ----------------
     fn section_spotlight(&mut self, ui: &mut egui::Ui, key: &mut KeyConfig) {
-        egui::CollapsingHeader::new("spotlight")
-            .default_open(false)
-            .show(ui, |ui| {
-                // rows mode
-                let mut rows = key.rows;
-                ComboBox::from_label("rows")
-                    .selected_text(key_rows_label(rows))
-                    .show_ui(ui, |ui| {
-                        for r in [KeyRows::All, KeyRows::Even, KeyRows::Odd, KeyRows::Single] {
-                            ui.selectable_value(&mut rows, r, key_rows_label(r));
-                        }
-                    });
-                key.rows = rows;
-
-                ui.add(Slider::new(&mut key.frequency, 1..=50).text("frequency"));
-                ui.add(Slider::new(&mut key.offset_units, -50..=50).text("offsetUnits"));
-                ui.checkbox(&mut key.row_phase_offset, "rowPhaseOffset");
-
-                let mut mode = key.mode;
-                ComboBox::from_label("mode")
-                    .selected_text(key_mode_label(mode))
-                    .show_ui(ui, |ui| {
-                        for m in [KeyMode::Travels, KeyMode::Anchored] {
-                            ui.selectable_value(&mut mode, m, key_mode_label(m));
-                        }
-                    });
-                key.mode = mode;
-
-                ui.add(
-                    Slider::new(&mut key.anchor_screen_offset_px, -1000.0..=1000.0)
-                        .text("anchorScreenOffsetPx"),
-                );
-
-                ui.horizontal(|ui| {
-                    ui.label("singleRow");
-                    let resp = ui.text_edit_singleline(&mut self.single_row_buf);
-                    if resp.lost_focus() || resp.changed() {
-                        let v = self.single_row_buf.trim();
-                        if v.eq_ignore_ascii_case("middle") {
-                            key.single_row = KeyRowValue::Middle(MiddleTag::Middle);
-                        } else if let Ok(n) = v.parse::<i64>() {
-                            let n = n.max(0) as u32;
-                            key.single_row = KeyRowValue::Index(n);
-                        }
+        section_header(ui, "spotlight", false, |ui| {
+            // rows mode
+            let mut rows = key.rows;
+            ComboBox::from_label("rows")
+                .width(COMBO_WIDTH)
+                .selected_text(key_rows_label(rows))
+                .show_ui(ui, |ui| {
+                    for r in [KeyRows::All, KeyRows::Even, KeyRows::Odd, KeyRows::Single] {
+                        ui.selectable_value(&mut rows, r, key_rows_label(r));
                     }
                 });
+            key.rows = rows;
+
+            egui::Grid::new("spotlight-sliders")
+                .num_columns(2)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    dense_slider(
+                        ui,
+                        "frequency",
+                        Slider::new(&mut key.frequency, 1..=50).text(""),
+                        "how often (in units) the spotlight color repeats",
+                    );
+                    ui.end_row();
+                    dense_slider(
+                        ui,
+                        "offsetUnits",
+                        Slider::new(&mut key.offset_units, -50..=50).text(""),
+                        "offset of the spotlight pattern in units (shift left/right)",
+                    );
+                    ui.end_row();
+                });
+
+            ui.checkbox(&mut key.row_phase_offset, "rowPhaseOffset")
+                .on_hover_text("stagger the spotlight phase across rows");
+
+            let mut mode = key.mode;
+            ComboBox::from_label("mode")
+                .width(COMBO_WIDTH)
+                .selected_text(key_mode_label(mode))
+                .show_ui(ui, |ui| {
+                    for m in [KeyMode::Travels, KeyMode::Anchored] {
+                        ui.selectable_value(&mut mode, m, key_mode_label(m));
+                    }
+                });
+            key.mode = mode;
+
+            egui::Grid::new("spotlight-anchor")
+                .num_columns(2)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    dense_slider(
+                        ui,
+                        "anchorScreenOffsetPx",
+                        Slider::new(&mut key.anchor_screen_offset_px, -1000.0..=1000.0)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "when mode=anchored, px offset of the spotlight from screen center",
+                    );
+                    ui.end_row();
+                });
+
+            ui.horizontal(|ui| {
+                ui.set_width(LABEL_COL_WIDTH);
+                ui.label("singleRow");
+                let resp = ui
+                    .text_edit_singleline(&mut self.single_row_buf)
+                    .on_hover_text(
+                        "when rows=single, pick which row: 'middle' or an integer index",
+                    );
+                if resp.lost_focus() || resp.changed() {
+                    let v = self.single_row_buf.trim();
+                    if v.eq_ignore_ascii_case("middle") {
+                        key.single_row = KeyRowValue::Middle(MiddleTag::Middle);
+                    } else if let Ok(n) = v.parse::<i64>() {
+                        let n = n.max(0) as u32;
+                        key.single_row = KeyRowValue::Index(n);
+                    }
+                }
             });
+        });
     }
 
     // ---------------- text ----------------
     fn section_text(&mut self, ui: &mut egui::Ui, text: &mut TextConfig) {
-        egui::CollapsingHeader::new("text")
-            .default_open(false)
-            .show(ui, |ui| {
-                let mut case = text.case;
-                ComboBox::from_label("case")
-                    .selected_text(text_case_label(case))
-                    .show_ui(ui, |ui| {
-                        for c in [TextCase::Lower, TextCase::Upper, TextCase::AsIs] {
-                            ui.selectable_value(&mut case, c, text_case_label(c));
-                        }
-                    });
-                text.case = case;
-            });
+        section_header(ui, "text", false, |ui| {
+            let mut case = text.case;
+            ComboBox::from_label("case")
+                .width(COMBO_WIDTH)
+                .selected_text(text_case_label(case))
+                .show_ui(ui, |ui| {
+                    for c in [TextCase::Lower, TextCase::Upper, TextCase::AsIs] {
+                        ui.selectable_value(&mut case, c, text_case_label(c));
+                    }
+                });
+            text.case = case;
+        });
     }
 
     // ---------------- band thresholds ----------------
@@ -300,137 +456,249 @@ impl ControlPanel {
         ui: &mut egui::Ui,
         thresholds: &mut std::collections::BTreeMap<String, f32>,
     ) {
-        egui::CollapsingHeader::new("band thresholds")
-            .default_open(false)
-            .show(ui, |ui| {
-                for band in Band::ALL.iter() {
-                    let key = band.as_str().to_string();
-                    let entry = thresholds.entry(key.clone()).or_insert(0.0);
-                    ui.add(
-                        Slider::new(entry, 0.0..=1.0)
-                            .step_by(0.01)
-                            .text(band.as_str()),
-                    );
-                }
-            });
+        section_header(ui, "band thresholds", false, |ui| {
+            // Iterate Band::ALL for consistent kick->snare->mid->hats order (item 8).
+            egui::Grid::new("band-threshold-sliders")
+                .num_columns(2)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    for band in Band::ALL.iter() {
+                        let key = band.as_str().to_string();
+                        let entry = thresholds.entry(key.clone()).or_insert(0.0);
+                        // label chip with band color + name
+                        ui.horizontal(|ui| {
+                            ui.set_width(LABEL_COL_WIDTH);
+                            ui.label(RichText::new("\u{25CF}").color(band_color(*band)));
+                            ui.label(band.as_str());
+                        });
+                        ui.add(
+                            Slider::new(entry, 0.0..=1.0)
+                                .step_by(0.01)
+                                .custom_formatter(|n, _| format!("{:.2}", n))
+                                .text(""),
+                        )
+                        .on_hover_text(format!(
+                            "{}: minimum transient strength to fire for this band",
+                            band.as_str()
+                        ));
+                        ui.end_row();
+                    }
+                });
+        });
     }
 
     // ---------------- tickers ----------------
     fn section_tickers(&mut self, ui: &mut egui::Ui, tickers: &mut [TickerConfig]) {
-        egui::CollapsingHeader::new("tickers")
-            .default_open(false)
-            .show(ui, |ui| {
-                for t in tickers.iter_mut() {
-                    egui::CollapsingHeader::new(t.id.clone())
-                        .default_open(false)
-                        .id_salt(format!("ticker-{}", t.id))
-                        .show(ui, |ui| {
-                            ui.add(Slider::new(&mut t.modulo, 1..=32).text("modulo"));
-
-                            // band
-                            let mut band = t.band;
-                            ComboBox::from_label("band")
-                                .selected_text(band.as_str())
-                                .show_ui(ui, |ui| {
-                                    for b in Band::ALL {
-                                        ui.selectable_value(&mut band, b, b.as_str());
-                                    }
-                                });
-                            t.band = band;
-
-                            // strength threshold (Option<f32>)
-                            let mut st = t.strength_threshold.unwrap_or(0.0);
-                            if ui
-                                .add(
-                                    Slider::new(&mut st, 0.0..=1.0)
-                                        .step_by(0.01)
-                                        .text("strengthThreshold"),
-                                )
-                                .changed()
-                            {
-                                t.strength_threshold = Some(st);
-                            }
-
-                            // step (Option<u32>)
-                            let mut step = t.step.unwrap_or(1);
-                            if ui
-                                .add(Slider::new(&mut step, 1..=32).text("step"))
-                                .changed()
-                            {
-                                t.step = Some(step);
-                            }
-
-                            // step offset (Option<u32>)
-                            let mut so = t.step_offset.unwrap_or(0);
-                            if ui
-                                .add(Slider::new(&mut so, 0..=32).text("stepOffset"))
-                                .changed()
-                            {
-                                t.step_offset = Some(so);
-                            }
-
-                            // offset (Option<i32>)
-                            let mut off = t.offset.unwrap_or(0);
-                            if ui
-                                .add(Slider::new(&mut off, -16..=16).text("offset"))
-                                .changed()
-                            {
-                                t.offset = Some(off);
-                            }
+        section_header(ui, "tickers", false, |ui| {
+            for t in tickers.iter_mut() {
+                // Status chip + id as the header title (item 9).
+                let dot = RichText::new("\u{25CF}").color(band_color(t.band)).strong();
+                let header_text =
+                    egui::WidgetText::from(dot).text().to_string() + "  " + t.id.as_str();
+                // CollapsingHeader title can't trivially combine coloured + plain text in 0.29, so
+                // paint the chip inside the body row and keep the id in the title.
+                egui::CollapsingHeader::new(RichText::new(&t.id).strong())
+                    .default_open(false)
+                    .id_salt(format!("ticker-{}", t.id))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("\u{25CF}").color(band_color(t.band)));
+                            ui.label(RichText::new(t.band.as_str()).small().strong());
                         });
-                }
-            });
+
+                        egui::Grid::new(format!("ticker-grid-{}", t.id))
+                            .num_columns(2)
+                            .spacing([8.0, 4.0])
+                            .show(ui, |ui| {
+                                dense_slider(
+                                    ui,
+                                    "modulo",
+                                    Slider::new(&mut t.modulo, 1..=32).text(""),
+                                    "fire once every N events of the selected band",
+                                );
+                                ui.end_row();
+
+                                // band
+                                let mut band = t.band;
+                                ui.horizontal(|ui| {
+                                    ui.set_width(LABEL_COL_WIDTH);
+                                    ui.label("band");
+                                });
+                                ComboBox::from_id_salt(format!("ticker-band-{}", t.id))
+                                    .width(COMBO_WIDTH)
+                                    .selected_text(band.as_str())
+                                    .show_ui(ui, |ui| {
+                                        for b in Band::ALL {
+                                            ui.selectable_value(&mut band, b, b.as_str());
+                                        }
+                                    });
+                                t.band = band;
+                                ui.end_row();
+
+                                // strength threshold (Option<f32>)
+                                let mut st = t.strength_threshold.unwrap_or(0.0);
+                                ui.horizontal(|ui| {
+                                    ui.set_width(LABEL_COL_WIDTH);
+                                    ui.label("strengthThreshold");
+                                });
+                                if ui
+                                    .add(
+                                        Slider::new(&mut st, 0.0..=1.0)
+                                            .step_by(0.01)
+                                            .custom_formatter(|n, _| format!("{:.2}", n))
+                                            .text(""),
+                                    )
+                                    .on_hover_text(
+                                        "per-ticker minimum transient strength (overrides band threshold)",
+                                    )
+                                    .changed()
+                                {
+                                    t.strength_threshold = Some(st);
+                                }
+                                ui.end_row();
+
+                                // step (Option<u32>)
+                                let mut step = t.step.unwrap_or(1);
+                                ui.horizontal(|ui| {
+                                    ui.set_width(LABEL_COL_WIDTH);
+                                    ui.label("step");
+                                });
+                                if ui
+                                    .add(Slider::new(&mut step, 1..=32).text(""))
+                                    .on_hover_text("stride through phases (advance by N per fire)")
+                                    .changed()
+                                {
+                                    t.step = Some(step);
+                                }
+                                ui.end_row();
+
+                                // step offset (Option<u32>)
+                                let mut so = t.step_offset.unwrap_or(0);
+                                ui.horizontal(|ui| {
+                                    ui.set_width(LABEL_COL_WIDTH);
+                                    ui.label("stepOffset");
+                                });
+                                if ui
+                                    .add(Slider::new(&mut so, 0..=32).text(""))
+                                    .on_hover_text("initial step offset")
+                                    .changed()
+                                {
+                                    t.step_offset = Some(so);
+                                }
+                                ui.end_row();
+
+                                // offset (Option<i32>)
+                                let mut off = t.offset.unwrap_or(0);
+                                ui.horizontal(|ui| {
+                                    ui.set_width(LABEL_COL_WIDTH);
+                                    ui.label("offset");
+                                });
+                                if ui
+                                    .add(Slider::new(&mut off, -16..=16).text(""))
+                                    .on_hover_text("initial event count offset")
+                                    .changed()
+                                {
+                                    t.offset = Some(off);
+                                }
+                                ui.end_row();
+                            });
+                    });
+                // Silence unused assignment warning on `header_text` (we keep the local for future
+                // use once CollapsingHeader can take rich coloured titles reliably on 0.29).
+                let _ = header_text;
+            }
+        });
     }
 
     // ---------------- bindings ----------------
     fn section_bindings(&mut self, ui: &mut egui::Ui, bindings: &mut [Binding]) {
-        egui::CollapsingHeader::new("bindings")
-            .default_open(false)
-            .show(ui, |ui| {
-                for (idx, b) in bindings.iter_mut().enumerate() {
-                    let target = match b.target {
-                        crate::types::BindingTarget::Rows => "rows",
-                        crate::types::BindingTarget::Camera => "camera",
-                    };
-                    let title = format!("{}: {} → {}", idx, b.ticker_id, target);
-                    egui::CollapsingHeader::new(title)
-                        .default_open(false)
-                        .id_salt(format!("binding-{}", idx))
-                        .show(ui, |ui| {
-                            for (i, action) in b.sequence.actions.iter_mut().enumerate() {
-                                let phase_title = format!("phase {}: {}", i, action.path);
-                                egui::CollapsingHeader::new(phase_title)
-                                    .default_open(false)
-                                    .id_salt(format!("binding-{}-phase-{}", idx, i))
-                                    .show(ui, |ui| {
-                                        phase_action_ui(ui, action);
-                                    });
-                            }
-                        });
-                }
-            });
+        section_header(ui, "bindings", false, |ui| {
+            for (idx, b) in bindings.iter_mut().enumerate() {
+                let target = match b.target {
+                    crate::types::BindingTarget::Rows => "rows",
+                    crate::types::BindingTarget::Camera => "camera",
+                };
+                // Alternation chip (item 10): check if respect_alternation != Some(false).
+                let alt_mark = if b.respect_alternation == Some(false) {
+                    "\u{2014}"
+                } else {
+                    "\u{2713}"
+                };
+                let title = format!("{}  {}: {} → {}", alt_mark, idx, b.ticker_id, target);
+                egui::CollapsingHeader::new(title)
+                    .default_open(false)
+                    .id_salt(format!("binding-{}", idx))
+                    .show(ui, |ui| {
+                        for (i, action) in b.sequence.actions.iter_mut().enumerate() {
+                            let phase_title = format!("phase {}: {}", i, action.path);
+                            egui::CollapsingHeader::new(phase_title)
+                                .default_open(false)
+                                .id_salt(format!("binding-{}-phase-{}", idx, i))
+                                .show(ui, |ui| {
+                                    phase_action_ui(ui, action);
+                                });
+                        }
+                    });
+            }
+        });
     }
 
     // ---------------- camera ----------------
     fn section_camera(&mut self, ui: &mut egui::Ui, camera: &mut CameraConfig) {
-        egui::CollapsingHeader::new("camera baseline")
-            .default_open(false)
-            .show(ui, |ui| {
-                let b: &mut CameraBaseline = &mut camera.baseline;
-                ui.add(
-                    Slider::new(&mut b.zoom, 0.1..=4.0)
-                        .step_by(0.01)
-                        .text("zoom"),
-                );
-                ui.add(Slider::new(&mut b.pan_x, -2000.0..=2000.0).text("panX"));
-                ui.add(Slider::new(&mut b.pan_y, -2000.0..=2000.0).text("panY"));
-                ui.add(
-                    Slider::new(&mut b.tilt, -180.0..=180.0)
-                        .step_by(0.1)
-                        .text("tilt"),
-                );
-                ui.add(Slider::new(&mut camera.row_overshoot, 0..=10).text("rowOvershoot"));
-            });
+        section_header(ui, "camera baseline", false, |ui| {
+            let b: &mut CameraBaseline = &mut camera.baseline;
+            egui::Grid::new("camera-sliders")
+                .num_columns(2)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    dense_slider(
+                        ui,
+                        "zoom",
+                        Slider::new(&mut b.zoom, 0.1..=4.0)
+                            .step_by(0.01)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "camera zoom multiplier (1.0 = fit, >1 = closer)",
+                    );
+                    ui.end_row();
+                    dense_slider(
+                        ui,
+                        "panX",
+                        Slider::new(&mut b.pan_x, -2000.0..=2000.0)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "horizontal pan baseline (base pixels)",
+                    );
+                    ui.end_row();
+                    dense_slider(
+                        ui,
+                        "panY",
+                        Slider::new(&mut b.pan_y, -2000.0..=2000.0)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "vertical pan baseline (base pixels)",
+                    );
+                    ui.end_row();
+                    dense_slider(
+                        ui,
+                        "tilt",
+                        Slider::new(&mut b.tilt, -180.0..=180.0)
+                            .step_by(0.1)
+                            .suffix("\u{00B0}")
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "camera tilt (rotation) baseline, in degrees",
+                    );
+                    ui.end_row();
+                    dense_slider(
+                        ui,
+                        "rowOvershoot",
+                        Slider::new(&mut camera.row_overshoot, 0..=10).text(""),
+                        "extra rows rendered beyond viewport edges",
+                    );
+                    ui.end_row();
+                });
+        });
     }
 
     // ---------------- record ----------------
@@ -440,60 +708,101 @@ impl ControlPanel {
         record: &mut RecordConfig,
         callbacks: &mut PanelCallbacks,
     ) {
-        egui::CollapsingHeader::new("record")
-            .default_open(true)
-            .show(ui, |ui| {
-                ui.add(
-                    Slider::new(&mut record.start_at, 0.0..=600.0)
-                        .step_by(0.1)
-                        .text("start (s)"),
-                );
-                ui.add(
-                    Slider::new(&mut record.duration, 0.5..=300.0)
-                        .step_by(0.5)
-                        .text("duration (s)"),
-                );
+        section_header(ui, "record", true, |ui| {
+            egui::Grid::new("record-sliders")
+                .num_columns(2)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    dense_slider(
+                        ui,
+                        "start (s)",
+                        Slider::new(&mut record.start_at, 0.0..=600.0)
+                            .step_by(0.1)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "start timestamp of the export (seconds)",
+                    );
+                    ui.end_row();
+                    dense_slider(
+                        ui,
+                        "duration (s)",
+                        Slider::new(&mut record.duration, 0.5..=300.0)
+                            .step_by(0.5)
+                            .custom_formatter(|n, _| format!("{:.2}", n))
+                            .text(""),
+                        "length of the export in seconds",
+                    );
+                    ui.end_row();
+                });
 
-                let mut fps = record.fps;
-                ComboBox::from_label("fps")
-                    .selected_text(format!("{}", fps))
-                    .show_ui(ui, |ui| {
-                        for f in [24u32, 30, 60] {
-                            ui.selectable_value(&mut fps, f, format!("{}", f));
-                        }
-                    });
-                record.fps = fps;
-
-                ui.add(Slider::new(&mut record.video_bitrate_mbps, 2..=80).text("bitrate (Mbps)"));
-                ui.add(Slider::new(&mut record.resolution_multiplier, 1..=4).text("res ×"));
-
-                let mut engine = record.engine;
-                ComboBox::from_label("engine")
-                    .selected_text(record_engine_label(engine))
-                    .show_ui(ui, |ui| {
-                        for e in [
-                            RecordEngine::Auto,
-                            RecordEngine::Native,
-                            RecordEngine::Ffmpeg,
-                        ] {
-                            ui.selectable_value(&mut engine, e, record_engine_label(e));
-                        }
-                    });
-                record.engine = engine;
-
-                ui.separator();
-                if ui
-                    .button("RECORD mp4")
-                    .on_hover_text(
-                        "Export the current config to an .mp4 using the selected engine.\n\
-                         Starts at `start (s)`, runs for `duration (s)` at the chosen fps.",
-                    )
-                    .clicked()
-                {
-                    if let Some(cb) = callbacks.on_record.as_mut() {
-                        cb();
+            let mut fps = record.fps;
+            ComboBox::from_label("fps")
+                .width(COMBO_WIDTH)
+                .selected_text(format!("{}", fps))
+                .show_ui(ui, |ui| {
+                    for f in [24u32, 30, 60] {
+                        ui.selectable_value(&mut fps, f, format!("{}", f));
                     }
+                });
+            record.fps = fps;
+
+            egui::Grid::new("record-sliders-2")
+                .num_columns(2)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    dense_slider(
+                        ui,
+                        "bitrate (Mbps)",
+                        Slider::new(&mut record.video_bitrate_mbps, 2..=80).text(""),
+                        "H.264 target video bitrate in megabits per second",
+                    );
+                    ui.end_row();
+                    dense_slider(
+                        ui,
+                        "res x",
+                        Slider::new(&mut record.resolution_multiplier, 1..=4).text(""),
+                        "resolution multiplier applied to the canvas for export",
+                    );
+                    ui.end_row();
+                });
+
+            let mut engine = record.engine;
+            ComboBox::from_label("engine")
+                .width(COMBO_WIDTH)
+                .selected_text(record_engine_label(engine))
+                .show_ui(ui, |ui| {
+                    for e in [
+                        RecordEngine::Auto,
+                        RecordEngine::Native,
+                        RecordEngine::Ffmpeg,
+                    ] {
+                        ui.selectable_value(&mut engine, e, record_engine_label(e));
+                    }
+                });
+            record.engine = engine;
+
+            ui.add_space(SECTION_PAD);
+            ui.separator();
+            ui.add_space(SECTION_PAD);
+
+            // Primary record button, sized full-width (item 4).
+            let primary = egui::Button::new(RichText::new("Record").strong().color(Color32::WHITE))
+                .fill(SELECTION_BLUE)
+                .rounding(6.0);
+            if ui
+                .add_sized([ui.available_width(), 32.0], primary)
+                .on_hover_text(
+                    "Export the current config to an .mp4 using the selected engine.\n\
+                     Starts at `start (s)`, runs for `duration (s)` at the chosen fps.",
+                )
+                .clicked()
+            {
+                if let Some(cb) = callbacks.on_record.as_mut() {
+                    cb();
                 }
+            }
+
+            ui.horizontal(|ui| {
                 if ui
                     .button("copy config JSON")
                     .on_hover_text(
@@ -517,6 +826,7 @@ impl ControlPanel {
                     }
                 }
             });
+        });
     }
 
     // ---------------- debug ----------------
@@ -526,17 +836,52 @@ impl ControlPanel {
         debug: &mut DebugConfig,
         _callbacks: &mut PanelCallbacks,
     ) {
-        egui::CollapsingHeader::new("debug")
-            .default_open(false)
-            .show(ui, |ui| {
-                ui.checkbox(&mut debug.hud, "hud");
-            });
+        section_header(ui, "debug", false, |ui| {
+            ui.checkbox(&mut debug.hud, "hud")
+                .on_hover_text("show on-canvas HUD (fps, timing, ticker phase)");
+        });
     }
 }
 
 // -------------------------------------------------------------------
 // Helpers
 // -------------------------------------------------------------------
+
+/// Draws a section header with a separator above (item 2) and renders the body inside a
+/// CollapsingHeader whose title is ALL CAPS + strong + small (SF-style section label).
+fn section_header<R>(
+    ui: &mut egui::Ui,
+    title: &str,
+    default_open: bool,
+    body: impl FnOnce(&mut egui::Ui) -> R,
+) -> Option<R> {
+    ui.add_space(SECTION_PAD);
+    ui.separator();
+    ui.add_space(SECTION_PAD);
+    let title = RichText::new(title.to_uppercase()).strong().small();
+    let mut out = None;
+    egui::CollapsingHeader::new(title)
+        .default_open(default_open)
+        .show(ui, |ui| {
+            out = Some(body(ui));
+        });
+    out
+}
+
+/// Renders a slider as a two-column row: left label (fixed width) + slider that fills the rest.
+/// Attaches a hover tooltip. Returns the slider's response.
+fn dense_slider<'a>(
+    ui: &mut egui::Ui,
+    label: &str,
+    slider: Slider<'a>,
+    tooltip: &str,
+) -> egui::Response {
+    ui.horizontal(|ui| {
+        ui.set_width(LABEL_COL_WIDTH);
+        ui.label(label);
+    });
+    ui.add(slider.show_value(true)).on_hover_text(tooltip)
+}
 
 const ALL_EASING_NAMES: [EasingName; 19] = [
     EasingName::Linear,
@@ -670,6 +1015,7 @@ fn apply_preset(feel: &mut FeelConfig, preset: FeelPreset) {
 fn rgb_edit(ui: &mut egui::Ui, label: &str, hex_mut: &mut String) {
     let mut rgb = parse_hex_rgb(hex_mut).unwrap_or([0, 0, 0]);
     ui.horizontal(|ui| {
+        ui.set_width(LABEL_COL_WIDTH);
         ui.label(label);
         if egui::color_picker::color_edit_button_srgb(ui, &mut rgb).changed() {
             *hex_mut = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
@@ -698,14 +1044,22 @@ fn parse_hex_rgb(s: &str) -> Option<[u8; 3]> {
 /// UI for one PhaseAction: path (free-text), duration, easing dropdown.
 fn phase_action_ui(ui: &mut egui::Ui, action: &mut PhaseAction) {
     ui.horizontal(|ui| {
+        ui.set_width(LABEL_COL_WIDTH);
         ui.label("path");
-        ui.text_edit_singleline(&mut action.path);
+        ui.text_edit_singleline(&mut action.path)
+            .on_hover_text("path identifier for this phase (e.g. 'rows.horizontalScroll')");
     });
-    ui.add(
-        Slider::new(&mut action.duration, 0.01..=4.0)
-            .step_by(0.01)
-            .text("duration"),
-    );
+    ui.horizontal(|ui| {
+        ui.set_width(LABEL_COL_WIDTH);
+        ui.label("duration");
+        ui.add(
+            Slider::new(&mut action.duration, 0.01..=4.0)
+                .step_by(0.01)
+                .custom_formatter(|n, _| format!("{:.2}", n))
+                .text(""),
+        )
+        .on_hover_text("length of this phase in beats (before feel.duration_scale)");
+    });
 
     // easing: Option<Easing>. We expose "linear" placeholder for None and all 19 named easings.
     // (Bezier easings are not editable here; a Bezier value is preserved on write-back by not clobbering it until the user picks a new named value.)
@@ -728,6 +1082,7 @@ fn phase_action_ui(ui: &mut egui::Ui, action: &mut PhaseAction) {
     };
 
     ComboBox::from_label("easing")
+        .width(COMBO_WIDTH)
         .selected_text(current_label)
         .show_ui(ui, |ui| {
             ui.selectable_value(&mut choice, EasingChoice::None, "linear");
@@ -747,4 +1102,10 @@ fn phase_action_ui(ui: &mut egui::Ui, action: &mut PhaseAction) {
             action.easing = Some(Easing::Named(n));
         }
     }
+}
+
+// band_from_str is unused for now; keep it available for future binding/filter UI.
+#[allow(dead_code)]
+fn _band_from_str_use(_: &str) -> Option<Band> {
+    band_from_str("")
 }

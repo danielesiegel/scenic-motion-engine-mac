@@ -13,6 +13,7 @@ use crate::audio::{JsonEventSource, Player, SyntheticEventSource};
 use crate::config::defaults::default_config;
 use crate::engine::{evaluate, EngineInputs};
 use crate::gui::panel::{ControlPanel, PanelCallbacks};
+use crate::gui::{HudOverlay, TransportBar};
 use crate::motion::paths::register_default_paths;
 use crate::render::gpu::GpuContext;
 use crate::render::text_renderer::TextRenderer;
@@ -38,6 +39,8 @@ pub struct ScenicApp {
     player: Player,
 
     panel: ControlPanel,
+    transport: TransportBar,
+    hud: HudOverlay,
 
     text_renderer_installed: bool,
     last_font_size: f32,
@@ -57,34 +60,8 @@ impl ScenicApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         register_default_paths();
 
-        // --- egui style: slightly larger default fonts + cleaner spacing. We only
-        // nudge the Proportional font; the custom glyphon stage uses its own fonts.
-        {
-            // Install the default FontDefinitions (bytes don't need to change — we scale
-            // via TextStyles below). This is still called so that if we later want to
-            // add a custom family, the hook is already in place.
-            cc.egui_ctx.set_fonts(egui::FontDefinitions::default());
-            cc.egui_ctx.style_mut(|s| {
-                use egui::{FontFamily, FontId, TextStyle};
-                s.text_styles
-                    .insert(TextStyle::Body, FontId::new(14.0, FontFamily::Proportional));
-                s.text_styles.insert(
-                    TextStyle::Button,
-                    FontId::new(14.0, FontFamily::Proportional),
-                );
-                s.text_styles.insert(
-                    TextStyle::Heading,
-                    FontId::new(16.0, FontFamily::Proportional),
-                );
-                s.text_styles.insert(
-                    TextStyle::Small,
-                    FontId::new(12.0, FontFamily::Proportional),
-                );
-                s.spacing.item_spacing = egui::vec2(8.0, 6.0);
-                s.spacing.button_padding = egui::vec2(10.0, 4.0);
-                s.visuals.collapsing_header_frame = true;
-            });
-        }
+        // Mac-style egui theme: fonts, spacing, visuals, scrollbars.
+        crate::gui::install_mac_style(cc.egui_ctx.clone());
 
         let mut font_loader = find_font_loader();
         let config = default_config();
@@ -131,6 +108,8 @@ impl ScenicApp {
             source,
             player,
             panel: ControlPanel::default(),
+            transport: TransportBar::default(),
+            hud: HudOverlay,
             text_renderer_installed,
             last_font_size,
             last_render_scale,
@@ -366,6 +345,14 @@ impl eframe::App for ScenicApp {
             self.reload_matching_analysis();
         }
 
+        // --- Bottom transport bar ---
+        egui::TopBottomPanel::bottom("transport")
+            .exact_height(36.0)
+            .frame(egui::Frame::default().fill(ctx.style().visuals.widgets.inactive.bg_fill))
+            .show(ctx, |ui| {
+                self.transport.ui(ui, &mut self.player);
+            });
+
         // --- Central stage ---
         // Zero margins so the GPU text / background fills the entire stage without
         // egui's style padding bleeding through.
@@ -412,6 +399,9 @@ impl eframe::App for ScenicApp {
                         rect,
                         ScenicPaintCallback,
                     ));
+                    if self.config.debug.hud {
+                        self.hud.ui(ui, &state, self.source.as_ref());
+                    }
                 } else {
                     ui.vertical_centered(|ui| {
                         ui.add_space(40.0);
