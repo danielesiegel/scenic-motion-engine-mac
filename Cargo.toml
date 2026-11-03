@@ -52,7 +52,7 @@ log = "0.4"
 env_logger = "0.11"
 rfd = "0.15"                                             # native file dialogs
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-dirs = "5"
+dirs = "7"
 
 # --- Export ---
 # ffmpeg is spawned as a subprocess. Keeps the build simple and portable.
