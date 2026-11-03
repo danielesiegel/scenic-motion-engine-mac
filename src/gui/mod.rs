@@ -1,8 +1,14 @@
+pub mod drag_drop;
 pub mod hud;
 pub mod panel;
+pub mod shortcuts;
 pub mod style;
 pub mod transport;
+pub mod welcome;
+pub use drag_drop::handle_dropped_files;
 pub use hud::HudOverlay;
 pub use panel::ControlPanel;
+pub use shortcuts::ShortcutOverlay;
 pub use style::install_mac_style;
 pub use transport::TransportBar;
+pub use welcome::WelcomeScreen;

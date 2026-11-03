@@ -13,7 +13,7 @@ use crate::audio::{JsonEventSource, Player, SyntheticEventSource};
 use crate::config::defaults::default_config;
 use crate::engine::{evaluate, EngineInputs};
 use crate::gui::panel::{ControlPanel, PanelCallbacks};
-use crate::gui::{HudOverlay, TransportBar};
+use crate::gui::{HudOverlay, ShortcutOverlay, TransportBar, WelcomeScreen};
 use crate::motion::paths::register_default_paths;
 use crate::render::gpu::GpuContext;
 use crate::render::text_renderer::TextRenderer;
@@ -41,6 +41,8 @@ pub struct ScenicApp {
     panel: ControlPanel,
     transport: TransportBar,
     hud: HudOverlay,
+    welcome: WelcomeScreen,
+    shortcuts: ShortcutOverlay,
 
     text_renderer_installed: bool,
     last_font_size: f32,
@@ -110,6 +112,8 @@ impl ScenicApp {
             panel: ControlPanel::default(),
             transport: TransportBar::default(),
             hud: HudOverlay,
+            welcome: WelcomeScreen::default(),
+            shortcuts: ShortcutOverlay::default(),
             text_renderer_installed,
             last_font_size,
             last_render_scale,
@@ -277,6 +281,7 @@ struct ShortcutActions {
 impl eframe::App for ScenicApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.sync_default_background(ctx);
+        crate::gui::handle_dropped_files(ctx, &mut self.player, &mut self.source);
 
         let actions = self.handle_shortcuts(ctx);
         if actions.toggle_playback {
@@ -364,6 +369,10 @@ impl eframe::App for ScenicApp {
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ctx, |ui| {
+                if self.audio_track_name.is_none() {
+                    self.welcome.ui(ui);
+                    return;
+                }
                 let t = self.player.time();
                 let (row_count, key_row) = self.resolve_row_count_and_key();
                 let state = evaluate(EngineInputs {
@@ -429,6 +438,18 @@ impl eframe::App for ScenicApp {
                     });
                 }
             });
+
+        // --- Shortcut cheatsheet overlay ---
+        // Toggle with `?` (which under US keyboards is Shift+Slash). Accept both the
+        // bare Questionmark key and Shift+Slash so hardware/layout quirks don't lock
+        // users out.
+        if ctx.input(|i| {
+            i.key_pressed(egui::Key::Questionmark)
+                || (i.modifiers.shift && i.key_pressed(egui::Key::Slash))
+        }) {
+            self.shortcuts.toggle();
+        }
+        self.shortcuts.ui(ctx);
 
         // Keep repainting while playing so the frame clock advances.
         if self.player.is_playing() {
