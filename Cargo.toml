@@ -37,6 +37,7 @@ glyphon = "0.6"
 cpal = "0.15"
 symphonia = { version = "0.5", features = ["wav", "pcm", "mp3", "flac"] }
 rtrb = "0.3"                                             # lock-free audio ring
+midir = "0.10"                                           # cross-platform MIDI (CoreMIDI on macOS)
 
 # --- Core ---
 serde = { version = "1", features = ["derive"] }
