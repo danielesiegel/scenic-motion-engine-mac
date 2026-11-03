@@ -7,14 +7,16 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use crate::audio::{JsonEventSource, Player, SyntheticEventSource};
-use crate::config::defaults::default_config;
 use crate::engine::{evaluate, EngineInputs};
 use crate::gui::panel::{ControlPanel, PanelCallbacks};
 use crate::gui::{HudOverlay, ShortcutOverlay, TransportBar, WelcomeScreen};
 use crate::motion::paths::register_default_paths;
+use crate::record::{OfflineRenderOptions, OfflineRenderer};
 use crate::render::gpu::GpuContext;
 use crate::render::text_renderer::TextRenderer;
 use crate::text::{build_unit_layout, FontLoader};
@@ -56,6 +58,28 @@ pub struct ScenicApp {
     /// Default background we installed on first frame — treated as "untouched" when the
     /// theme flips. Any other string means the user has set their own color.
     last_default_bg: Option<String>,
+
+    /// Timestamp of the last autosave. Drives the 10-second autosave cadence in `update`.
+    last_autosave: Instant,
+
+    /// Flag set from the panel's `on_record` closure. Polled in `update` with `&mut self`
+    /// access to actually spawn the record thread — this indirection is needed because
+    /// `PanelCallbacks::on_record` is a `Box<dyn FnMut()>` that cannot borrow `&mut self`.
+    record_req: Arc<Mutex<RecordRequest>>,
+    /// Pending record job: spawned on a background thread so the GUI stays responsive.
+    /// Set when the user clicks the record button; cleared when the thread finishes.
+    recording_thread: Option<std::thread::JoinHandle<anyhow::Result<std::path::PathBuf>>>,
+    /// Frames rendered so far on the active job (shared with the worker thread).
+    recording_progress: Arc<AtomicU32>,
+    /// Total frames in the active job (shared with the worker thread).
+    recording_total: Arc<AtomicU32>,
+    /// Target FPS for the active job — used to format progress as seconds.
+    recording_fps: u32,
+}
+
+#[derive(Default)]
+struct RecordRequest {
+    requested: bool,
 }
 
 impl ScenicApp {
@@ -66,7 +90,7 @@ impl ScenicApp {
         crate::gui::install_mac_style(cc.egui_ctx.clone());
 
         let mut font_loader = find_font_loader();
-        let config = default_config();
+        let config = crate::config::load_or_default();
         let layout = build_unit_layout(
             &mut font_loader,
             config.layout.font_size_px,
@@ -120,6 +144,24 @@ impl ScenicApp {
             audio_track_name,
             theme_bg_seeded: false,
             last_default_bg: None,
+            last_autosave: Instant::now(),
+            record_req: Arc::new(Mutex::new(RecordRequest::default())),
+            recording_thread: None,
+            recording_progress: Arc::new(AtomicU32::new(0)),
+            recording_total: Arc::new(AtomicU32::new(0)),
+            recording_fps: 0,
+        }
+    }
+
+    /// Persist the live `Config` to the platform's default config path.
+    /// Never panics — any filesystem/serde failure is logged and swallowed, so a bad
+    /// config dir can't take down the app at exit or on ⌘S.
+    fn save_config(&self) {
+        let path = crate::config::default_config_path()
+            .unwrap_or_else(|_| PathBuf::from("config.json"));
+        match crate::config::save_config(&self.config, &path) {
+            Ok(()) => log::info!("[config] saved to {}", path.display()),
+            Err(err) => log::warn!("[config] save to {} failed: {}", path.display(), err),
         }
     }
 
@@ -246,6 +288,114 @@ impl ScenicApp {
         }
     }
 
+    /// Spawn an [`OfflineRenderer`] on a background thread with the live Config.
+    /// No-ops if a recording job is already in flight.
+    fn start_recording(&mut self) {
+        if self.recording_thread.is_some() {
+            log::info!("[record] already recording — ignoring click");
+            return;
+        }
+
+        // Snapshot everything the worker needs. The worker owns a clone of Config and the
+        // Arc<dyn EventSource>, so the GUI can keep mutating its own copies while the job runs.
+        let config = self.config.clone();
+        let source: Arc<dyn EventSource> = self.source.clone();
+        let font_dir = PathBuf::from(ASSETS_FONTS);
+
+        // Resolve dimensions = canvas * record.resolution_multiplier.
+        let mult = self.config.record.resolution_multiplier.max(1);
+        let width = self.config.canvas.width.saturating_mul(mult);
+        let height = self.config.canvas.height.saturating_mul(mult);
+
+        // Audio for mux: assets/audio/<track>.wav if a track is loaded.
+        let audio_in = self.audio_track_name.as_deref().and_then(|name| {
+            let p = PathBuf::from(ASSETS_AUDIO).join(format!("{}.wav", name));
+            if p.is_file() {
+                Some(p)
+            } else {
+                None
+            }
+        });
+
+        // Output: renders/<track>_<start>s-<duration>s_<timestamp>.mp4.
+        let _ = std::fs::create_dir_all("renders");
+        let track = self.audio_track_name.as_deref().unwrap_or("scenic");
+        let ts = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+        let output = PathBuf::from("renders").join(format!(
+            "{}_{:.1}s-{:.1}s_{}.mp4",
+            track, self.config.record.start_at, self.config.record.duration, ts
+        ));
+
+        let opts = OfflineRenderOptions {
+            start_at: self.config.record.start_at,
+            duration: self.config.record.duration,
+            fps: self.config.record.fps,
+            width,
+            height,
+            output: output.clone(),
+            audio_in,
+        };
+
+        self.recording_fps = opts.fps;
+        self.recording_progress.store(0, Ordering::Relaxed);
+        self.recording_total.store(
+            (opts.duration * opts.fps as f32).round() as u32,
+            Ordering::Relaxed,
+        );
+
+        let progress = self.recording_progress.clone();
+        let total = self.recording_total.clone();
+
+        log::info!(
+            "[record] starting → {} ({}x{} @ {}fps for {:.2}s)",
+            output.display(),
+            width,
+            height,
+            opts.fps,
+            opts.duration
+        );
+
+        let handle = std::thread::spawn(move || -> anyhow::Result<PathBuf> {
+            let mut renderer = OfflineRenderer::new(config, source, &font_dir)?;
+            renderer.render(&opts, |done, tot| {
+                progress.store(done, Ordering::Relaxed);
+                total.store(tot, Ordering::Relaxed);
+            })?;
+            Ok(opts.output)
+        });
+        self.recording_thread = Some(handle);
+    }
+
+    /// If the recording worker finished, join it and surface the outcome via `self.status`.
+    fn poll_recording_thread(&mut self) {
+        let finished = self
+            .recording_thread
+            .as_ref()
+            .map(|h| h.is_finished())
+            .unwrap_or(false);
+        if !finished {
+            return;
+        }
+        let Some(handle) = self.recording_thread.take() else {
+            return;
+        };
+        match handle.join() {
+            Ok(Ok(path)) => {
+                log::info!("[record] saved to {}", path.display());
+                self.status = format!("recorded: {}\n", path.display());
+            }
+            Ok(Err(err)) => {
+                log::warn!("[record] failed: {:#}", err);
+                self.status = format!("record failed: {}\n", err);
+            }
+            Err(_) => {
+                log::warn!("[record] thread panicked");
+                self.status = "record failed: worker panicked\n".to_string();
+            }
+        }
+        self.recording_fps = 0;
+    }
+
     fn resolve_row_count_and_key(&self) -> (u32, u32) {
         let row_count = match self.config.layout.rows {
             RowsMode::Count(n) => n.max(1),
@@ -301,6 +451,18 @@ impl eframe::App for ScenicApp {
             self.stop_to_start_at();
         }
 
+        // ⌘S = persist the live Config to disk now.
+        if ctx.input(|i| i.modifiers.mac_cmd && i.key_pressed(egui::Key::S)) {
+            self.save_config();
+            self.last_autosave = Instant::now();
+        }
+
+        // Periodic autosave so an unexpected quit (crash, OS kill) still preserves work.
+        if self.last_autosave.elapsed().as_secs() > 10 {
+            self.save_config();
+            self.last_autosave = Instant::now();
+        }
+
         // Resync the backing-store size if renderScale changed.
         if (self.config.canvas.render_scale - self.last_render_scale).abs() > f32::EPSILON {
             self.last_render_scale = self.config.canvas.render_scale;
@@ -325,12 +487,19 @@ impl eframe::App for ScenicApp {
         // The panel callbacks go through flags because the panel borrows &mut self.config.
         let mut want_reload_analysis = false;
         let mut want_copy_config = false;
+        let rec_req = self.record_req.clone();
         egui::SidePanel::right("control")
             .default_width(360.0)
             .resizable(true)
             .show(ctx, |ui| {
                 let mut cbs = PanelCallbacks {
-                    on_record: None,
+                    on_record: Some(Box::new(move || {
+                        // Just flip the flag; the real work happens after the panel
+                        // returns so we can take `&mut self`.
+                        if let Ok(mut r) = rec_req.lock() {
+                            r.requested = true;
+                        }
+                    })),
                     on_copy_config: Some(Box::new(|| {
                         want_copy_config = true;
                     })),
@@ -348,6 +517,32 @@ impl eframe::App for ScenicApp {
         }
         if want_reload_analysis {
             self.reload_matching_analysis();
+        }
+
+        // Did the user click the record button? If so, start a job on a background thread.
+        let want_record = self
+            .record_req
+            .lock()
+            .map(|mut r| {
+                let was = r.requested;
+                r.requested = false;
+                was
+            })
+            .unwrap_or(false);
+        if want_record {
+            self.start_recording();
+        }
+
+        // Poll the background job: if it finished, join and surface the result.
+        self.poll_recording_thread();
+        // While a record job is active, show rolling progress in the status string.
+        if self.recording_thread.is_some() && self.recording_fps > 0 {
+            let fps = self.recording_fps as f32;
+            let done = self.recording_progress.load(Ordering::Relaxed) as f32 / fps;
+            let total = self.recording_total.load(Ordering::Relaxed) as f32 / fps;
+            self.status = format!("recording: {:.1}/{:.1}s\n", done, total);
+            // Keep repainting so the progress string ticks even when audio is paused.
+            ctx.request_repaint();
         }
 
         // --- Bottom transport bar ---
@@ -457,6 +652,12 @@ impl eframe::App for ScenicApp {
         } else {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
+    }
+
+    /// Called once on shutdown. eframe 0.29 with the wgpu backend (no `glow` feature)
+    /// uses the arg-less `on_exit` signature. Flush the live Config so quit = commit.
+    fn on_exit(&mut self) {
+        self.save_config();
     }
 }
 
