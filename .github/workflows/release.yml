@@ -66,7 +66,7 @@ jobs:
           echo "archive=dist/${ARCHIVE}" >> "$GITHUB_OUTPUT"
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ steps.pkg.outputs.archive }}
           generate_release_notes: true
