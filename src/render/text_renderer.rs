@@ -18,6 +18,16 @@
 //! for the uniform row path). Any row that has a `per_glyph` closure forces the per-glyph buffer
 //! path, which honors all deltas.
 //!
+//! Shape caching: cosmic-text `set_text` + `shape_until_scroll` is the dominant per-frame cost
+//! (~90% of `prepare()` on an M1 at 1080p). The shaped glyph positions depend only on
+//! `(text, font_size, line_height, family)` — scroll offset, camera transform, color, and opacity
+//! are applied downstream by glyphon positioning, which does not re-shape. We cache shape outputs
+//! per Buffer in `row_shape_cache` / `glyph_shape_cache`: on each `prepare()`, before touching a
+//! Buffer we check the cache; if the key is unchanged, we skip the re-shape entirely and emit a
+//! `TextArea` referencing the already-shaped Buffer. Within a single `prepare()` we also dedupe:
+//! multiple rows with the same visible string (common when all rows scroll in lockstep) share one
+//! Buffer, with per-row placement differences expressed via the `TextArea` left/top/scale/color.
+//!
 //! Reference: ../../scenicsynths/src/render/canvas.ts for semantics.
 
 use crate::render::gpu::GpuContext;
@@ -41,6 +51,12 @@ pub struct TextRenderer {
     // Glyph buffers hold a single key-colored character; reused across frames to avoid churn.
     row_buffers: Vec<Buffer>,
     glyph_buffers: Vec<Buffer>,
+
+    // Cross-frame shape caches, parallel to `row_buffers` / `glyph_buffers`. Each entry stores
+    // the shape key the matching Buffer currently carries. On the next frame, if a slot is
+    // requested with the same key, we skip the (dominant) cosmic-text re-shape.
+    row_shape_cache: Vec<Option<RowShapeKey>>,
+    glyph_shape_cache: Vec<Option<GlyphShapeKey>>,
 
     // Scratch state consumed by `render`. We keep placement information so `prepare` can emit
     // TextArea descriptors (which borrow Buffers) without colliding with the mutable borrow of
@@ -67,6 +83,26 @@ struct Placement {
     color: Color,
 }
 
+// Shape identity for a row's dim strip. Equality means "cosmic-text would produce the same
+// shaped glyphs, same advances, same positions". Scroll/color/alpha are NOT part of the key —
+// they are applied via `TextArea` without re-shaping.
+#[derive(Clone, PartialEq)]
+struct RowShapeKey {
+    text: String,
+    // f32 bit-pattern for exact equality; shape depends on exact numeric metrics.
+    font_size_bits: u32,
+    line_height_bits: u32,
+    family: Option<String>,
+}
+
+#[derive(Clone, PartialEq)]
+struct GlyphShapeKey {
+    ch: char,
+    font_size_bits: u32,
+    line_height_bits: u32,
+    family: Option<String>,
+}
+
 impl TextRenderer {
     pub fn new(gpu: GpuContext, _font_system: &mut FontSystem) -> Result<Self> {
         let cache = glyphon::Cache::new(&gpu.device);
@@ -90,6 +126,8 @@ impl TextRenderer {
             swash_cache,
             row_buffers: Vec::new(),
             glyph_buffers: Vec::new(),
+            row_shape_cache: Vec::new(),
+            glyph_shape_cache: Vec::new(),
             placements: Vec::new(),
             width: 0,
             height: 0,
@@ -119,9 +157,16 @@ impl TextRenderer {
         key_row: u32,
         font_system: &mut FontSystem,
     ) -> Result<()> {
+        // Temporary benchmark instrumentation gated behind an env var; the branch is a dead
+        // predicate in production (env lookup is a syscall, so cheap for non-bench builds).
+        let bench = std::env::var_os("SCENIC_BENCH_PREPARE").is_some();
+        let t0 = if bench { Some(std::time::Instant::now()) } else { None };
         self.placements.clear();
 
-        // Keep buffers around but mark them as consumed via `used_row` / `used_glyph` cursors.
+        // `used_row` / `used_glyph` track the next slot in the (persistent) buffer pools to
+        // consider. Within a frame we scan `0..used_*` for a shape-key match (same-frame
+        // dedupe); if nothing matches we claim slot `used_*` and either reuse the Buffer verbatim
+        // (cross-frame hit) or re-shape it (cache miss).
         let mut used_row: usize = 0;
         let mut used_glyph: usize = 0;
 
@@ -162,6 +207,10 @@ impl TextRenderer {
             line_height.max(config.layout.font_size_px),
         );
         let base_attrs = Attrs::new().family(family);
+
+        // Bit patterns used for shape-key equality (exact f32 bits).
+        let font_size_bits = metrics.font_size.to_bits();
+        let line_height_bits = metrics.line_height.to_bits();
 
         // Pre-size the glyph buffer pool conservatively (one Buffer per key glyph).
         for r in 0..row_count_effective {
@@ -248,20 +297,22 @@ impl TextRenderer {
                 let sx = (sxc / snap).round() * snap;
                 let sy = (syc / snap).round() * snap;
 
-                let buf_idx =
-                    ensure_row_buffer(&mut self.row_buffers, &mut used_row, font_system, metrics);
-                {
-                    let buffer = &mut self.row_buffers[buf_idx];
-                    buffer.set_metrics(font_system, metrics);
-                    buffer.set_size(
-                        font_system,
-                        Some(f32::INFINITY),
-                        Some(metrics.line_height.max(1.0)),
-                    );
-                    // Dim as the default color.
-                    buffer.set_text(font_system, &text, base_attrs, Shaping::Advanced);
-                    buffer.shape_until_scroll(font_system, false);
-                }
+                let key = RowShapeKey {
+                    text,
+                    font_size_bits,
+                    line_height_bits,
+                    family: family_owned.clone(),
+                };
+
+                let buf_idx = acquire_row_buffer(
+                    &mut self.row_buffers,
+                    &mut self.row_shape_cache,
+                    &mut used_row,
+                    font_system,
+                    metrics,
+                    base_attrs,
+                    &key,
+                );
 
                 let dim_with_alpha = scale_alpha(dim_color, row_opacity);
                 self.placements.push(Placement {
@@ -286,25 +337,21 @@ impl TextRenderer {
                     let gys = (gyc / snap).round() * snap;
 
                     let ch = apply_case(layout.glyph_char(p), config.text.case);
-                    let gi = ensure_glyph_buffer(
+                    let gkey = GlyphShapeKey {
+                        ch,
+                        font_size_bits,
+                        line_height_bits,
+                        family: family_owned.clone(),
+                    };
+                    let gi = acquire_glyph_buffer(
                         &mut self.glyph_buffers,
+                        &mut self.glyph_shape_cache,
                         &mut used_glyph,
                         font_system,
                         metrics,
+                        base_attrs,
+                        &gkey,
                     );
-                    {
-                        let buffer = &mut self.glyph_buffers[gi];
-                        buffer.set_metrics(font_system, metrics);
-                        buffer.set_size(
-                            font_system,
-                            Some(f32::INFINITY),
-                            Some(metrics.line_height.max(1.0)),
-                        );
-                        let mut s = String::new();
-                        s.push(ch);
-                        buffer.set_text(font_system, &s, base_attrs, Shaping::Advanced);
-                        buffer.shape_until_scroll(font_system, false);
-                    }
                     let key_with_alpha = scale_alpha(key_color, row_opacity);
                     self.placements.push(Placement {
                         kind: PlacementKind::Glyph,
@@ -343,25 +390,21 @@ impl TextRenderer {
                     let syp = (cyp / snap).round() * snap;
 
                     let ch = apply_case(layout.glyph_char(p), config.text.case);
-                    let gi = ensure_glyph_buffer(
+                    let gkey = GlyphShapeKey {
+                        ch,
+                        font_size_bits,
+                        line_height_bits,
+                        family: family_owned.clone(),
+                    };
+                    let gi = acquire_glyph_buffer(
                         &mut self.glyph_buffers,
+                        &mut self.glyph_shape_cache,
                         &mut used_glyph,
                         font_system,
                         metrics,
+                        base_attrs,
+                        &gkey,
                     );
-                    {
-                        let buffer = &mut self.glyph_buffers[gi];
-                        buffer.set_metrics(font_system, metrics);
-                        buffer.set_size(
-                            font_system,
-                            Some(f32::INFINITY),
-                            Some(metrics.line_height.max(1.0)),
-                        );
-                        let mut s = String::new();
-                        s.push(ch);
-                        buffer.set_text(font_system, &s, base_attrs, Shaping::Advanced);
-                        buffer.shape_until_scroll(font_system, false);
-                    }
 
                     let alpha = row_opacity * g_opacity.clamp(0.0, 1.0);
                     let color = scale_alpha(if is_key { key_color } else { dim_color }, alpha);
@@ -419,6 +462,10 @@ impl TextRenderer {
             text_areas,
             &mut self.swash_cache,
         )?;
+
+        if let Some(start) = t0 {
+            eprintln!("[bench] prepare() {} us", start.elapsed().as_micros());
+        }
 
         Ok(())
     }
@@ -678,30 +725,100 @@ fn scale_alpha(c: Color, alpha: f32) -> Color {
     Color::rgba(r, g, b, out_a)
 }
 
-fn ensure_row_buffer(
+// Acquire a row-wide Buffer whose shaped glyphs match `key`.
+//
+// Three outcomes, each written to be O(num slots in pool) which is tiny (<= row count):
+//
+// 1. **Same-frame hit**: a previously-claimed slot in this `prepare()` call already matches the
+//    key — return its index without touching the Buffer. The caller will emit another
+//    `TextArea` referencing the same Buffer with a different left/top/color. Zero shape cost.
+// 2. **Cross-frame hit**: the next unused slot already carries the same shape key from a
+//    previous frame. Claim it, bump the cursor, and skip the re-shape. Zero shape cost.
+// 3. **Miss**: either slot `*used` is unoccupied or carries a different key. Grow the pool if
+//    needed, run `set_text` + `shape_until_scroll`, and record the key for next frame.
+fn acquire_row_buffer(
     pool: &mut Vec<Buffer>,
+    cache: &mut Vec<Option<RowShapeKey>>,
     used: &mut usize,
     font_system: &mut FontSystem,
     metrics: Metrics,
+    attrs: Attrs<'_>,
+    key: &RowShapeKey,
 ) -> usize {
+    // 1. Same-frame dedupe.
+    for i in 0..*used {
+        if cache.get(i).and_then(|k| k.as_ref()) == Some(key) {
+            return i;
+        }
+    }
+
+    // Grow pool/cache if slot `*used` doesn't exist yet.
     if *used >= pool.len() {
         pool.push(Buffer::new(font_system, metrics));
+        cache.push(None);
     }
+
     let idx = *used;
     *used += 1;
+
+    // 2. Cross-frame hit?
+    if cache[idx].as_ref() == Some(key) {
+        return idx;
+    }
+
+    // 3. Miss — (re)shape and update the cache entry.
+    let buffer = &mut pool[idx];
+    buffer.set_metrics(font_system, metrics);
+    buffer.set_size(
+        font_system,
+        Some(f32::INFINITY),
+        Some(metrics.line_height.max(1.0)),
+    );
+    buffer.set_text(font_system, &key.text, attrs, Shaping::Advanced);
+    buffer.shape_until_scroll(font_system, false);
+    cache[idx] = Some(key.clone());
     idx
 }
 
-fn ensure_glyph_buffer(
+// Analogue of `acquire_row_buffer` for the single-glyph key-overlay pool.
+fn acquire_glyph_buffer(
     pool: &mut Vec<Buffer>,
+    cache: &mut Vec<Option<GlyphShapeKey>>,
     used: &mut usize,
     font_system: &mut FontSystem,
     metrics: Metrics,
+    attrs: Attrs<'_>,
+    key: &GlyphShapeKey,
 ) -> usize {
+    for i in 0..*used {
+        if cache.get(i).and_then(|k| k.as_ref()) == Some(key) {
+            return i;
+        }
+    }
+
     if *used >= pool.len() {
         pool.push(Buffer::new(font_system, metrics));
+        cache.push(None);
     }
+
     let idx = *used;
     *used += 1;
+
+    if cache[idx].as_ref() == Some(key) {
+        return idx;
+    }
+
+    let buffer = &mut pool[idx];
+    buffer.set_metrics(font_system, metrics);
+    buffer.set_size(
+        font_system,
+        Some(f32::INFINITY),
+        Some(metrics.line_height.max(1.0)),
+    );
+    let mut s = String::new();
+    s.push(key.ch);
+    buffer.set_text(font_system, &s, attrs, Shaping::Advanced);
+    buffer.shape_until_scroll(font_system, false);
+    cache[idx] = Some(key.clone());
     idx
 }

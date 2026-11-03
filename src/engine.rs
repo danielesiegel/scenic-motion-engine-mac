@@ -15,9 +15,15 @@ use crate::motion::paths::get_path;
 use crate::motion::phase::apply_easing;
 use crate::motion::tickers::resolve_threshold;
 use crate::types::*;
+use rayon::prelude::*;
 use smallvec::SmallVec;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+
+// Rows must exceed this threshold before rayon's fork/join overhead pays off.
+// Measured on M1 Pro: below 8 rows the serial path wins; from 8 upward the
+// parallel path scales roughly linearly with the number of selected rows.
+const PARALLEL_ROW_THRESHOLD: u32 = 8;
 
 pub struct EngineInputs<'a> {
     pub t: f32,
@@ -336,15 +342,31 @@ fn evaluate_binding_contribution(
 
     let mut last_action_ptr: *const PhaseAction = std::ptr::null();
 
+    // Resolve PathFn + effective (duration, easing) once per action in the
+    // sequence, outside the past-event loop. Both only depend on
+    // (action, config.feel), which are stable across events; hoisting lifts
+    // ~N RwLock acquisitions on the paths registry down to num_actions (1-4).
+    let num_actions = sequence.actions.len();
+    let resolved: SmallVec<[(Option<PathFn>, f32, Option<Easing>); 4]> = sequence
+        .actions
+        .iter()
+        .map(|action| {
+            let path_fn = get_path(&action.path);
+            let (duration, easing) = effective_action_timing(action, config);
+            (path_fn, duration, easing)
+        })
+        .collect();
+
     // Past events: frozen progress based on gap to next event.
     for i in 0..last_idx {
         let phase_i = (((i as i64 + offset) % modulo) + modulo) % modulo;
-        let action = &sequence.actions[(phase_i as usize) % sequence.actions.len()];
-        let path_fn = match get_path(&action.path) {
+        let action_idx = (phase_i as usize) % num_actions;
+        let action = &sequence.actions[action_idx];
+        let (path_fn_opt, duration, easing) = resolved[action_idx];
+        let path_fn = match path_fn_opt {
             Some(f) => f,
             None => continue,
         };
-        let (duration, easing) = effective_action_timing(action, config);
         let gap = filtered[i + 1].t - filtered[i].t;
         let frozen = (gap / duration).clamp(0.0, 1.0);
         let eased = apply_easing(easing, frozen);
@@ -369,9 +391,10 @@ fn evaluate_binding_contribution(
     // Active (latest) event.
     let i = last_idx;
     let phase_i = (((last_idx as i64 + offset) % modulo) + modulo) % modulo;
-    let action = &sequence.actions[(phase_i as usize) % sequence.actions.len()];
-    if let Some(path_fn) = get_path(&action.path) {
-        let (duration, easing) = effective_action_timing(action, config);
+    let action_idx = (phase_i as usize) % num_actions;
+    let action = &sequence.actions[action_idx];
+    let (path_fn_opt, duration, easing) = resolved[action_idx];
+    if let Some(path_fn) = path_fn_opt {
         let progress = ((t - filtered[i].t) / duration).clamp(0.0, 1.0);
         let eased = apply_easing(easing, progress);
         let action_ptr: *const PhaseAction = action;
@@ -658,26 +681,66 @@ pub fn evaluate(inp: EngineInputs<'_>) -> FrameState {
         }
 
         // Rows target. Inline row selector (no Vec<bool> alloc).
-        for row_index in 0..row_count {
-            if !row_selected(binding, row_index, row_count, key_row) {
-                continue;
+        //
+        // For row_count >= PARALLEL_ROW_THRESHOLD we fan rows out across rayon's
+        // thread pool: `evaluate_binding_contribution` is pure over read-only
+        // shared state (config, filtered events, ticker cfg), so each row is
+        // independent. We collect outputs and compose serially — composition
+        // writes to disjoint `rows[idx]` slots but keeping it serial preserves
+        // deterministic FP order relative to the serial path.
+        let per_row: Vec<Option<PathOutput>> = if row_count >= PARALLEL_ROW_THRESHOLD {
+            (0..row_count)
+                .into_par_iter()
+                .map(|row_index| {
+                    if !row_selected(binding, row_index, row_count, key_row) {
+                        return None;
+                    }
+                    let dir = Dir::for_row(row_index);
+                    let out = evaluate_binding_contribution(
+                        t,
+                        binding,
+                        ticker_cfg,
+                        &binding.sequence,
+                        &filtered,
+                        row_index,
+                        row_count,
+                        dir,
+                        layout,
+                        config,
+                    );
+                    let row_scale = h_scale * row_velocity_scale(row_index, row_count, config);
+                    Some(scale_horizontal(out, row_scale))
+                })
+                .collect()
+        } else {
+            (0..row_count)
+                .map(|row_index| {
+                    if !row_selected(binding, row_index, row_count, key_row) {
+                        return None;
+                    }
+                    let dir = Dir::for_row(row_index);
+                    let out = evaluate_binding_contribution(
+                        t,
+                        binding,
+                        ticker_cfg,
+                        &binding.sequence,
+                        &filtered,
+                        row_index,
+                        row_count,
+                        dir,
+                        layout,
+                        config,
+                    );
+                    let row_scale = h_scale * row_velocity_scale(row_index, row_count, config);
+                    Some(scale_horizontal(out, row_scale))
+                })
+                .collect()
+        };
+
+        for (row_index, maybe_scaled) in per_row.into_iter().enumerate() {
+            if let Some(scaled) = maybe_scaled {
+                compose_into(&mut rows[row_index], scaled, mode);
             }
-            let dir = Dir::for_row(row_index);
-            let out = evaluate_binding_contribution(
-                t,
-                binding,
-                ticker_cfg,
-                &binding.sequence,
-                &filtered,
-                row_index,
-                row_count,
-                dir,
-                layout,
-                config,
-            );
-            let row_scale = h_scale * row_velocity_scale(row_index, row_count, config);
-            let scaled = scale_horizontal(out, row_scale);
-            compose_into(&mut rows[row_index as usize], scaled, mode);
         }
     }
 

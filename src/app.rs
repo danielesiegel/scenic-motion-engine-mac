@@ -449,6 +449,39 @@ struct ShortcutActions {
 
 impl eframe::App for ScenicApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // --- TEMP frame-pacing instrumentation (issue #26) --------------------
+        // Logs rolling frame count + instantaneous framerate once per second
+        // to stderr for the first ~10 seconds, then stops emitting. During the
+        // measurement window we also force an immediate repaint so we probe the
+        // uncapped ceiling (ProMotion 120Hz vs. 60Hz display).
+        {
+            use std::sync::{Mutex, OnceLock};
+            static START: OnceLock<Instant> = OnceLock::new();
+            static STATE: OnceLock<Mutex<(Instant, u32)>> = OnceLock::new();
+            let start = START.get_or_init(Instant::now);
+            let state = STATE.get_or_init(|| Mutex::new((Instant::now(), 0u32)));
+            if start.elapsed().as_secs() <= 10 {
+                ctx.request_repaint();
+            }
+            if let Ok(mut guard) = state.lock() {
+                guard.1 += 1;
+                let now = Instant::now();
+                let dt = now.duration_since(guard.0).as_secs_f32();
+                if dt >= 1.0 && start.elapsed().as_secs() <= 10 {
+                    eprintln!(
+                        "frame-time: {:.1} fps (frames={}, dt={:.3}s, elapsed={:.1}s)",
+                        guard.1 as f32 / dt,
+                        guard.1,
+                        dt,
+                        start.elapsed().as_secs_f32()
+                    );
+                    guard.1 = 0;
+                    guard.0 = now;
+                }
+            }
+        }
+        // ----------------------------------------------------------------------
+
         // Sync persisted visibility onto the live panel structs at frame start.
         self.about.visible = self.config.debug.about_open;
         self.prefs.visible = self.config.debug.prefs_open;
