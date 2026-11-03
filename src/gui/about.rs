@@ -56,14 +56,11 @@ impl AboutPanel {
                 ui.separator();
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            if ui.button("Close").clicked() {
-                                self.visible = false;
-                            }
-                        },
-                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Close").clicked() {
+                            self.visible = false;
+                        }
+                    });
                 });
             });
 

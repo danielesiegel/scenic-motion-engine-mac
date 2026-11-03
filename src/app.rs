@@ -166,8 +166,8 @@ impl ScenicApp {
     /// Never panics — any filesystem/serde failure is logged and swallowed, so a bad
     /// config dir can't take down the app at exit or on ⌘S.
     fn save_config(&self) {
-        let path = crate::config::default_config_path()
-            .unwrap_or_else(|_| PathBuf::from("config.json"));
+        let path =
+            crate::config::default_config_path().unwrap_or_else(|_| PathBuf::from("config.json"));
         match crate::config::save_config(&self.config, &path) {
             Ok(()) => log::info!("[config] saved to {}", path.display()),
             Err(err) => log::warn!("[config] save to {} failed: {}", path.display(), err),

@@ -20,12 +20,8 @@ pub fn handle_dropped_files(
     player: &mut Player,
     source: &mut Arc<dyn EventSource>,
 ) {
-    let (dropped, hovering) = ctx.input(|i| {
-        (
-            i.raw.dropped_files.clone(),
-            !i.raw.hovered_files.is_empty(),
-        )
-    });
+    let (dropped, hovering) =
+        ctx.input(|i| (i.raw.dropped_files.clone(), !i.raw.hovered_files.is_empty()));
 
     if hovering {
         paint_hint_overlay(ctx);
@@ -82,7 +78,11 @@ fn load_audio(path: &Path, player: &mut Player, source: &mut Arc<dyn EventSource
             );
         }
         Err(err) => {
-            log::warn!("drag-drop: audio load failed for {}: {}", path.display(), err);
+            log::warn!(
+                "drag-drop: audio load failed for {}: {}",
+                path.display(),
+                err
+            );
             return;
         }
     }
@@ -123,8 +123,7 @@ fn load_analysis(path: &Path, source: &mut Arc<dyn EventSource>) {
 
 fn paint_hint_overlay(ctx: &egui::Context) {
     let screen = ctx.screen_rect();
-    let painter =
-        ctx.layer_painter(LayerId::new(Order::Foreground, egui::Id::new("drop-hint")));
+    let painter = ctx.layer_painter(LayerId::new(Order::Foreground, egui::Id::new("drop-hint")));
 
     // Translucent scrim.
     painter.rect_filled(screen, 0.0, Color32::from_black_alpha(140));
@@ -132,8 +131,11 @@ fn paint_hint_overlay(ctx: &egui::Context) {
     // Central pill with the hint text.
     let text_size = 20.0;
     let pad = egui::vec2(28.0, 18.0);
-    let galley =
-        painter.layout_no_wrap(DROP_HINT.to_string(), FontId::proportional(text_size), Color32::WHITE);
+    let galley = painter.layout_no_wrap(
+        DROP_HINT.to_string(),
+        FontId::proportional(text_size),
+        Color32::WHITE,
+    );
     let center = screen.center();
     let pill = Rect::from_center_size(center, galley.size() + pad * 2.0);
     painter.rect_filled(pill, 12.0, Color32::from_rgba_unmultiplied(32, 32, 32, 220));

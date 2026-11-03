@@ -227,8 +227,21 @@ pub fn default_config() -> Config {
             key: "scenicsynths".into(),
             case: TextCase::Lower,
         },
+        // --- STAGE AESTHETICS RETUNE (2026-11-02) ---
+        // Prior defaults (font 72, dim #2c2c2c, frequency 10, dpr 2, tilt -5) produced a sparse,
+        // low-contrast, tilted first frame on the Mac stage. The virtual canvas is 1920x1080 but
+        // the egui central panel downsamples it into a much smaller window region, so font_size
+        // must be chosen relative to the *virtual* canvas and tuned downward for density.
+        //
+        // Numbers below target ~20 densely packed rows with 3-5 visible spotlights/row and
+        // crisp dim/key contrast, matching the scenicsynths web prototype that the user liked.
+        //   font_size_px: 72  -> 44    (line_height ~53px, auto rows = ceil(1080/53)+6 = 27)
+        //   dim:   #2c2c2c   -> #555555 (lifted from near-invisible to legible-but-muted)
+        //   frequency: 10    -> 4       (spotlight every ~4 units ≈ 968px → ~2/row visible on 1920)
+        //   dpr:   2.0       -> 1.0     (match web; avoid double-scaling with render_scale=2)
+        //   camera.tilt: -5  -> 0       (static-looking first frame; ±10 see-saw still active)
         layout: LayoutConfig {
-            font_size_px: 72.0,
+            font_size_px: 44.0,
             leading_px: 0.0,
             rows: RowsMode::Auto(AutoRows::Auto),
             row_stagger_px: 0.33,
@@ -237,13 +250,13 @@ pub fn default_config() -> Config {
         },
         colors: ColorConfig {
             background: "#0b0b0b".into(),
-            dim: "#2c2c2c".into(),
+            dim: "#555555".into(),
             key: "#d6d6d6".into(),
         },
         key: KeyConfig {
             rows: KeyRows::All,
             single_row: KeyRowValue::Middle(MiddleTag::Middle),
-            frequency: 10,
+            frequency: 4,
             offset_units: 0,
             row_phase_offset: true,
             mode: KeyMode::Travels,
@@ -252,7 +265,7 @@ pub fn default_config() -> Config {
         canvas: CanvasConfig {
             width: 1920,
             height: 1080,
-            dpr: 2.0,
+            dpr: 1.0,
             render_scale: 2.0,
         },
         audio: AudioConfig::default(),
@@ -264,7 +277,7 @@ pub fn default_config() -> Config {
                 zoom: 1.0,
                 pan_x: 0.0,
                 pan_y: 0.0,
-                tilt: -5.0,
+                tilt: 0.0,
             },
             row_overshoot: 3,
         },

@@ -102,10 +102,7 @@ impl WaveformStrip {
     }
 
     fn ensure_cache(&mut self, samples: &Arc<Vec<f32>>, duration: f32, width_px: u32) {
-        let width_changed = self
-            .cached_width_px
-            .abs_diff(width_px)
-            >= WIDTH_RESIZE_THRESHOLD;
+        let width_changed = self.cached_width_px.abs_diff(width_px) >= WIDTH_RESIZE_THRESHOLD;
         let dur_changed = (self.cached_duration - duration).abs() > f32::EPSILON;
         let len_changed = self.cached_samples_len != samples.len();
 

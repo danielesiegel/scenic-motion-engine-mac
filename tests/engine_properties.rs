@@ -151,9 +151,18 @@ fn respect_alternation_true_row_only_pairs_equal_magnitude_opposite_sign() {
     let cfg = slide_step_config(true);
     let layout = fake_layout();
     let src = make_source(vec![
-        TransientEvent { t: 0.0, strength: 1.0 },
-        TransientEvent { t: 0.5, strength: 1.0 },
-        TransientEvent { t: 1.1, strength: 1.0 },
+        TransientEvent {
+            t: 0.0,
+            strength: 1.0,
+        },
+        TransientEvent {
+            t: 0.5,
+            strength: 1.0,
+        },
+        TransientEvent {
+            t: 1.1,
+            strength: 1.0,
+        },
     ]);
     // Sweep several time points to exercise active + frozen contributions.
     for &t in &[0.1f32, 0.25, 0.5, 0.75, 1.0, 1.2, 1.5, 2.0, 3.0] {

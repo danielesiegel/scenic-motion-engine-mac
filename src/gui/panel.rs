@@ -4,6 +4,7 @@
 //! - `ControlPanel::ui(&mut self, ui, config, callbacks)` renders the side panel. All controls
 //!   mutate `config` in place; buttons invoke `callbacks` (record, copy_config, reload_analysis).
 
+use crate::gui::style::{secondary_label, soft_divider};
 use crate::types::{
     Band, Binding, CameraBaseline, CameraConfig, ColorConfig, Config, DebugConfig, Easing,
     EasingName, FeelConfig, FeelPreset, GlobalEasing, KeyConfig, KeyMode, KeyRowValue, KeyRows,
@@ -13,26 +14,39 @@ use crate::types::{
 use egui::{Color32, ComboBox, RichText, Slider};
 
 // -------------------------------------------------------------------
-// Visual constants (approximate macOS inspector feel)
+// Visual constants (macOS inspector feel)
 // -------------------------------------------------------------------
 
-/// Width of the left label column in dense slider rows (px).
-const LABEL_COL_WIDTH: f32 = 112.0;
-/// Fixed width for ComboBox dropdowns so they align visually.
-const COMBO_WIDTH: f32 = 180.0;
-/// Vertical padding above section separators.
-const SECTION_PAD: f32 = 4.0;
+/// Width of the leading icon/label column for rows that *can't* use `Slider::text()`
+/// (checkboxes, text edits, color pickers, custom combo rows).
+const LEAD_COL_WIDTH: f32 = 150.0;
+/// Vertical padding around section-local dividers.
+const SECTION_PAD: f32 = 2.0;
 
-/// macOS-ish selection blue used for the primary record button.
-const SELECTION_BLUE: Color32 = Color32::from_rgb(0x3A, 0x7A, 0xFF);
+/// macOS-ish selection blue used for the primary record button — muted a shade from `#007aff`.
+const SELECTION_BLUE: Color32 = Color32::from_rgb(0x00, 0x7A, 0xCC);
 
 fn band_color(band: Band) -> Color32 {
     match band {
-        Band::Kick => Color32::from_rgb(0x3A, 0x7A, 0xFF),  // blue
+        Band::Kick => Color32::from_rgb(0x3A, 0x7A, 0xFF), // blue
         Band::Snare => Color32::from_rgb(0x44, 0xCC, 0x88), // green
-        Band::Mid => Color32::from_rgb(0xFF, 0xAA, 0x33),   // orange
-        Band::Hats => Color32::from_rgb(0xFF, 0x55, 0x66),  // red
+        Band::Mid => Color32::from_rgb(0xFF, 0xAA, 0x33),  // orange
+        Band::Hats => Color32::from_rgb(0xFF, 0x55, 0x66), // red
     }
+}
+
+/// Paint a 6px band color dot inline with the current row.
+fn band_dot(ui: &mut egui::Ui, band: Band) {
+    let size = egui::vec2(10.0, ui.spacing().interact_size.y);
+    let (rect, _resp) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let center = egui::pos2(rect.left() + 5.0, rect.center().y);
+    ui.painter().circle_filled(center, 3.0, band_color(band));
+}
+
+/// Half-width ComboBox (right-aligned alignment target). Mirrors Logic Pro's inspector
+/// where enum rows put the control in the right half of the pane.
+fn combo_half_width(ui: &egui::Ui) -> f32 {
+    (ui.available_width() * 0.5).max(100.0)
 }
 
 fn band_from_str(s: &str) -> Option<Band> {
@@ -95,9 +109,9 @@ impl ControlPanel {
                 self.section_camera(ui, &mut config.camera);
                 self.section_record(ui, &mut config.record, callbacks);
 
-                // Debug last, with a thin separator above (item 11).
+                // Debug last, with a soft hairline above.
                 ui.add_space(SECTION_PAD);
-                ui.separator();
+                soft_divider(ui);
                 ui.add_space(SECTION_PAD);
                 self.section_debug(ui, &mut config.debug, callbacks);
             });
@@ -105,12 +119,12 @@ impl ControlPanel {
 
     // ---------------- feel ----------------
     fn section_feel(&mut self, ui: &mut egui::Ui, feel: &mut FeelConfig) {
-        section_header(ui, "feel", true, |ui| {
+        section_header(ui, "Feel", true, |ui| {
             // preset
             let mut preset = feel.preset;
             let preset_label = feel_preset_label(preset);
             ComboBox::from_label("preset")
-                .width(COMBO_WIDTH)
+                .width(combo_half_width(ui))
                 .selected_text(preset_label)
                 .show_ui(ui, |ui| {
                     for p in [
@@ -131,7 +145,7 @@ impl ControlPanel {
             }
 
             egui::Grid::new("feel-sliders")
-                .num_columns(2)
+                .num_columns(1)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     dense_slider(
@@ -149,7 +163,7 @@ impl ControlPanel {
             // row velocity shape
             let mut shape = feel.row_velocity_shape;
             ComboBox::from_label("row vel curve")
-                .width(COMBO_WIDTH)
+                .width(combo_half_width(ui))
                 .selected_text(row_velocity_shape_label(shape))
                 .show_ui(ui, |ui| {
                     for s in [
@@ -167,7 +181,7 @@ impl ControlPanel {
             }
 
             egui::Grid::new("feel-sliders-2")
-                .num_columns(2)
+                .num_columns(1)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     dense_slider(
@@ -200,7 +214,7 @@ impl ControlPanel {
             // global easing
             let mut ge = feel.global_easing;
             ComboBox::from_label("global easing")
-                .width(COMBO_WIDTH)
+                .width(combo_half_width(ui))
                 .selected_text(global_easing_label(ge))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut ge, GlobalEasing::Auto, "auto");
@@ -219,7 +233,7 @@ impl ControlPanel {
                 .default_open(false)
                 .show(ui, |ui| {
                     egui::Grid::new("feel-bezier")
-                        .num_columns(2)
+                        .num_columns(1)
                         .spacing([8.0, 4.0])
                         .show(ui, |ui| {
                             dense_slider(
@@ -276,9 +290,9 @@ impl ControlPanel {
         layout: &mut LayoutConfig,
         render_scale: &mut f32,
     ) {
-        section_header(ui, "layout", false, |ui| {
+        section_header(ui, "Layout", false, |ui| {
             egui::Grid::new("layout-sliders")
-                .num_columns(2)
+                .num_columns(1)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     dense_slider(
@@ -342,7 +356,7 @@ impl ControlPanel {
 
     // ---------------- colors ----------------
     fn section_colors(&mut self, ui: &mut egui::Ui, colors: &mut ColorConfig) {
-        section_header(ui, "colors", false, |ui| {
+        section_header(ui, "Colors", false, |ui| {
             rgb_edit(ui, "background", &mut colors.background);
             rgb_edit(ui, "dim", &mut colors.dim);
             rgb_edit(ui, "key", &mut colors.key);
@@ -351,11 +365,11 @@ impl ControlPanel {
 
     // ---------------- spotlight ----------------
     fn section_spotlight(&mut self, ui: &mut egui::Ui, key: &mut KeyConfig) {
-        section_header(ui, "spotlight", false, |ui| {
+        section_header(ui, "Spotlight", false, |ui| {
             // rows mode
             let mut rows = key.rows;
             ComboBox::from_label("rows")
-                .width(COMBO_WIDTH)
+                .width(combo_half_width(ui))
                 .selected_text(key_rows_label(rows))
                 .show_ui(ui, |ui| {
                     for r in [KeyRows::All, KeyRows::Even, KeyRows::Odd, KeyRows::Single] {
@@ -365,7 +379,7 @@ impl ControlPanel {
             key.rows = rows;
 
             egui::Grid::new("spotlight-sliders")
-                .num_columns(2)
+                .num_columns(1)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     dense_slider(
@@ -389,7 +403,7 @@ impl ControlPanel {
 
             let mut mode = key.mode;
             ComboBox::from_label("mode")
-                .width(COMBO_WIDTH)
+                .width(combo_half_width(ui))
                 .selected_text(key_mode_label(mode))
                 .show_ui(ui, |ui| {
                     for m in [KeyMode::Travels, KeyMode::Anchored] {
@@ -399,7 +413,7 @@ impl ControlPanel {
             key.mode = mode;
 
             egui::Grid::new("spotlight-anchor")
-                .num_columns(2)
+                .num_columns(1)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     dense_slider(
@@ -414,7 +428,7 @@ impl ControlPanel {
                 });
 
             ui.horizontal(|ui| {
-                ui.set_width(LABEL_COL_WIDTH);
+                ui.set_width(LEAD_COL_WIDTH);
                 ui.label("singleRow");
                 let resp = ui
                     .text_edit_singleline(&mut self.single_row_buf)
@@ -436,10 +450,10 @@ impl ControlPanel {
 
     // ---------------- text ----------------
     fn section_text(&mut self, ui: &mut egui::Ui, text: &mut TextConfig) {
-        section_header(ui, "text", false, |ui| {
+        section_header(ui, "Text", false, |ui| {
             let mut case = text.case;
             ComboBox::from_label("case")
-                .width(COMBO_WIDTH)
+                .width(combo_half_width(ui))
                 .selected_text(text_case_label(case))
                 .show_ui(ui, |ui| {
                     for c in [TextCase::Lower, TextCase::Upper, TextCase::AsIs] {
@@ -456,31 +470,28 @@ impl ControlPanel {
         ui: &mut egui::Ui,
         thresholds: &mut std::collections::BTreeMap<String, f32>,
     ) {
-        section_header(ui, "band thresholds", false, |ui| {
+        section_header(ui, "Band thresholds", false, |ui| {
             // Iterate Band::ALL for consistent kick->snare->mid->hats order (item 8).
             egui::Grid::new("band-threshold-sliders")
-                .num_columns(2)
+                .num_columns(1)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     for band in Band::ALL.iter() {
                         let key = band.as_str().to_string();
                         let entry = thresholds.entry(key.clone()).or_insert(0.0);
-                        // label chip with band color + name
                         ui.horizontal(|ui| {
-                            ui.set_width(LABEL_COL_WIDTH);
-                            ui.label(RichText::new("\u{25CF}").color(band_color(*band)));
-                            ui.label(band.as_str());
+                            band_dot(ui, *band);
+                            ui.add(
+                                Slider::new(entry, 0.0..=1.0)
+                                    .step_by(0.01)
+                                    .custom_formatter(|n, _| format!("{:.2}", n))
+                                    .text(band.as_str()),
+                            )
+                            .on_hover_text(format!(
+                                "{}: minimum transient strength to fire for this band",
+                                band.as_str()
+                            ));
                         });
-                        ui.add(
-                            Slider::new(entry, 0.0..=1.0)
-                                .step_by(0.01)
-                                .custom_formatter(|n, _| format!("{:.2}", n))
-                                .text(""),
-                        )
-                        .on_hover_text(format!(
-                            "{}: minimum transient strength to fire for this band",
-                            band.as_str()
-                        ));
                         ui.end_row();
                     }
                 });
@@ -489,25 +500,20 @@ impl ControlPanel {
 
     // ---------------- tickers ----------------
     fn section_tickers(&mut self, ui: &mut egui::Ui, tickers: &mut [TickerConfig]) {
-        section_header(ui, "tickers", false, |ui| {
+        section_header(ui, "Tickers", false, |ui| {
             for t in tickers.iter_mut() {
-                // Status chip + id as the header title (item 9).
-                let dot = RichText::new("\u{25CF}").color(band_color(t.band)).strong();
-                let header_text =
-                    egui::WidgetText::from(dot).text().to_string() + "  " + t.id.as_str();
-                // CollapsingHeader title can't trivially combine coloured + plain text in 0.29, so
-                // paint the chip inside the body row and keep the id in the title.
+                // Collapsing header per ticker; band color dot is painted inside the body.
                 egui::CollapsingHeader::new(RichText::new(&t.id).strong())
                     .default_open(false)
                     .id_salt(format!("ticker-{}", t.id))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("\u{25CF}").color(band_color(t.band)));
-                            ui.label(RichText::new(t.band.as_str()).small().strong());
+                            band_dot(ui, t.band);
+                            secondary_label(ui, t.band.as_str());
                         });
 
                         egui::Grid::new(format!("ticker-grid-{}", t.id))
-                            .num_columns(2)
+                            .num_columns(1)
                             .spacing([8.0, 4.0])
                             .show(ui, |ui| {
                                 dense_slider(
@@ -521,11 +527,11 @@ impl ControlPanel {
                                 // band
                                 let mut band = t.band;
                                 ui.horizontal(|ui| {
-                                    ui.set_width(LABEL_COL_WIDTH);
+                                    ui.set_width(LEAD_COL_WIDTH);
                                     ui.label("band");
                                 });
                                 ComboBox::from_id_salt(format!("ticker-band-{}", t.id))
-                                    .width(COMBO_WIDTH)
+                                    .width(combo_half_width(ui))
                                     .selected_text(band.as_str())
                                     .show_ui(ui, |ui| {
                                         for b in Band::ALL {
@@ -538,7 +544,7 @@ impl ControlPanel {
                                 // strength threshold (Option<f32>)
                                 let mut st = t.strength_threshold.unwrap_or(0.0);
                                 ui.horizontal(|ui| {
-                                    ui.set_width(LABEL_COL_WIDTH);
+                                    ui.set_width(LEAD_COL_WIDTH);
                                     ui.label("strengthThreshold");
                                 });
                                 if ui
@@ -560,7 +566,7 @@ impl ControlPanel {
                                 // step (Option<u32>)
                                 let mut step = t.step.unwrap_or(1);
                                 ui.horizontal(|ui| {
-                                    ui.set_width(LABEL_COL_WIDTH);
+                                    ui.set_width(LEAD_COL_WIDTH);
                                     ui.label("step");
                                 });
                                 if ui
@@ -575,7 +581,7 @@ impl ControlPanel {
                                 // step offset (Option<u32>)
                                 let mut so = t.step_offset.unwrap_or(0);
                                 ui.horizontal(|ui| {
-                                    ui.set_width(LABEL_COL_WIDTH);
+                                    ui.set_width(LEAD_COL_WIDTH);
                                     ui.label("stepOffset");
                                 });
                                 if ui
@@ -590,7 +596,7 @@ impl ControlPanel {
                                 // offset (Option<i32>)
                                 let mut off = t.offset.unwrap_or(0);
                                 ui.horizontal(|ui| {
-                                    ui.set_width(LABEL_COL_WIDTH);
+                                    ui.set_width(LEAD_COL_WIDTH);
                                     ui.label("offset");
                                 });
                                 if ui
@@ -603,16 +609,13 @@ impl ControlPanel {
                                 ui.end_row();
                             });
                     });
-                // Silence unused assignment warning on `header_text` (we keep the local for future
-                // use once CollapsingHeader can take rich coloured titles reliably on 0.29).
-                let _ = header_text;
             }
         });
     }
 
     // ---------------- bindings ----------------
     fn section_bindings(&mut self, ui: &mut egui::Ui, bindings: &mut [Binding]) {
-        section_header(ui, "bindings", false, |ui| {
+        section_header(ui, "Bindings", false, |ui| {
             for (idx, b) in bindings.iter_mut().enumerate() {
                 let target = match b.target {
                     crate::types::BindingTarget::Rows => "rows",
@@ -645,10 +648,10 @@ impl ControlPanel {
 
     // ---------------- camera ----------------
     fn section_camera(&mut self, ui: &mut egui::Ui, camera: &mut CameraConfig) {
-        section_header(ui, "camera baseline", false, |ui| {
+        section_header(ui, "Camera baseline", false, |ui| {
             let b: &mut CameraBaseline = &mut camera.baseline;
             egui::Grid::new("camera-sliders")
-                .num_columns(2)
+                .num_columns(1)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     dense_slider(
@@ -708,9 +711,9 @@ impl ControlPanel {
         record: &mut RecordConfig,
         callbacks: &mut PanelCallbacks,
     ) {
-        section_header(ui, "record", true, |ui| {
+        section_header(ui, "Record", true, |ui| {
             egui::Grid::new("record-sliders")
-                .num_columns(2)
+                .num_columns(1)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     dense_slider(
@@ -737,7 +740,7 @@ impl ControlPanel {
 
             let mut fps = record.fps;
             ComboBox::from_label("fps")
-                .width(COMBO_WIDTH)
+                .width(combo_half_width(ui))
                 .selected_text(format!("{}", fps))
                 .show_ui(ui, |ui| {
                     for f in [24u32, 30, 60] {
@@ -747,7 +750,7 @@ impl ControlPanel {
             record.fps = fps;
 
             egui::Grid::new("record-sliders-2")
-                .num_columns(2)
+                .num_columns(1)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     dense_slider(
@@ -768,7 +771,7 @@ impl ControlPanel {
 
             let mut engine = record.engine;
             ComboBox::from_label("engine")
-                .width(COMBO_WIDTH)
+                .width(combo_half_width(ui))
                 .selected_text(record_engine_label(engine))
                 .show_ui(ui, |ui| {
                     for e in [
@@ -782,25 +785,28 @@ impl ControlPanel {
             record.engine = engine;
 
             ui.add_space(SECTION_PAD);
-            ui.separator();
+            soft_divider(ui);
             ui.add_space(SECTION_PAD);
 
-            // Primary record button, sized full-width (item 4).
-            let primary = egui::Button::new(RichText::new("Record").strong().color(Color32::WHITE))
-                .fill(SELECTION_BLUE)
-                .rounding(6.0);
-            if ui
-                .add_sized([ui.available_width(), 32.0], primary)
-                .on_hover_text(
-                    "Export the current config to an .mp4 using the selected engine.\n\
-                     Starts at `start (s)`, runs for `duration (s)` at the chosen fps.",
-                )
-                .clicked()
-            {
-                if let Some(cb) = callbacks.on_record.as_mut() {
-                    cb();
+            // 120px pill-shaped record button, right-aligned.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let primary =
+                    egui::Button::new(RichText::new("Record").strong().color(Color32::WHITE))
+                        .fill(SELECTION_BLUE)
+                        .rounding(14.0);
+                if ui
+                    .add_sized([120.0, 28.0], primary)
+                    .on_hover_text(
+                        "Export the current config to an .mp4 using the selected engine.\n\
+                         Starts at `start (s)`, runs for `duration (s)` at the chosen fps.",
+                    )
+                    .clicked()
+                {
+                    if let Some(cb) = callbacks.on_record.as_mut() {
+                        cb();
+                    }
                 }
-            }
+            });
 
             ui.horizontal(|ui| {
                 if ui
@@ -836,7 +842,7 @@ impl ControlPanel {
         debug: &mut DebugConfig,
         _callbacks: &mut PanelCallbacks,
     ) {
-        section_header(ui, "debug", false, |ui| {
+        section_header(ui, "Debug", false, |ui| {
             ui.checkbox(&mut debug.hud, "hud")
                 .on_hover_text("show on-canvas HUD (fps, timing, ticker phase)");
         });
@@ -847,39 +853,37 @@ impl ControlPanel {
 // Helpers
 // -------------------------------------------------------------------
 
-/// Draws a section header with a separator above (item 2) and renders the body inside a
-/// CollapsingHeader whose title is ALL CAPS + strong + small (SF-style section label).
+/// Draws a bare CollapsingHeader (no frame, no leading separator) whose title is
+/// sentence-case, strong, 13px — Logic Pro inspector style. Tightens vertical rhythm
+/// inside the body.
 fn section_header<R>(
     ui: &mut egui::Ui,
     title: &str,
     default_open: bool,
     body: impl FnOnce(&mut egui::Ui) -> R,
 ) -> Option<R> {
-    ui.add_space(SECTION_PAD);
-    ui.separator();
-    ui.add_space(SECTION_PAD);
-    let title = RichText::new(title.to_uppercase()).strong().small();
+    let title = RichText::new(title).strong().size(13.0);
     let mut out = None;
     egui::CollapsingHeader::new(title)
         .default_open(default_open)
         .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 4.0;
             out = Some(body(ui));
         });
     out
 }
 
-/// Renders a slider as a two-column row: left label (fixed width) + slider that fills the rest.
-/// Attaches a hover tooltip. Returns the slider's response.
+/// Logic Pro–style slider row: label trails the slider (via `Slider::text`), value is
+/// shown inline by Slider by default. One widget per row — no label column.
 fn dense_slider<'a>(
     ui: &mut egui::Ui,
     label: &str,
-    slider: Slider<'a>,
+    mut slider: Slider<'a>,
     tooltip: &str,
 ) -> egui::Response {
-    ui.horizontal(|ui| {
-        ui.set_width(LABEL_COL_WIDTH);
-        ui.label(label);
-    });
+    // If the Slider was pre-built with `.text("")`, overwrite with the real label so
+    // callers don't need to be updated.
+    slider = slider.text(label);
     ui.add(slider.show_value(true)).on_hover_text(tooltip)
 }
 
@@ -1015,7 +1019,7 @@ fn apply_preset(feel: &mut FeelConfig, preset: FeelPreset) {
 fn rgb_edit(ui: &mut egui::Ui, label: &str, hex_mut: &mut String) {
     let mut rgb = parse_hex_rgb(hex_mut).unwrap_or([0, 0, 0]);
     ui.horizontal(|ui| {
-        ui.set_width(LABEL_COL_WIDTH);
+        ui.set_width(LEAD_COL_WIDTH);
         ui.label(label);
         if egui::color_picker::color_edit_button_srgb(ui, &mut rgb).changed() {
             *hex_mut = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
@@ -1044,13 +1048,13 @@ fn parse_hex_rgb(s: &str) -> Option<[u8; 3]> {
 /// UI for one PhaseAction: path (free-text), duration, easing dropdown.
 fn phase_action_ui(ui: &mut egui::Ui, action: &mut PhaseAction) {
     ui.horizontal(|ui| {
-        ui.set_width(LABEL_COL_WIDTH);
+        ui.set_width(LEAD_COL_WIDTH);
         ui.label("path");
         ui.text_edit_singleline(&mut action.path)
             .on_hover_text("path identifier for this phase (e.g. 'rows.horizontalScroll')");
     });
     ui.horizontal(|ui| {
-        ui.set_width(LABEL_COL_WIDTH);
+        ui.set_width(LEAD_COL_WIDTH);
         ui.label("duration");
         ui.add(
             Slider::new(&mut action.duration, 0.01..=4.0)
@@ -1082,7 +1086,7 @@ fn phase_action_ui(ui: &mut egui::Ui, action: &mut PhaseAction) {
     };
 
     ComboBox::from_label("easing")
-        .width(COMBO_WIDTH)
+        .width(combo_half_width(ui))
         .selected_text(current_label)
         .show_ui(ui, |ui| {
             ui.selectable_value(&mut choice, EasingChoice::None, "linear");

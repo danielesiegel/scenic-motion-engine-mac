@@ -1,36 +1,26 @@
 use scenic_motion_engine::app::ScenicApp;
 
-/// Procedurally generate a 64x64 RGBA icon (small enough to inline cheaply).
-/// macOS will upscale as needed. We use a 4-dot gradient suggestive of the four
-/// audio bands (sub / low / mid / high) over a near-black background.
-fn generate_app_icon() -> egui::IconData {
-    const W: u32 = 64;
-    const H: u32 = 64;
-    let mut rgba = vec![0u8; (W * H * 4) as usize];
-    // Palette per quadrant.
-    let bands: [[u8; 3]; 4] = [
-        [0x3a, 0x7a, 0xff], // sub   — blue
-        [0x44, 0xcc, 0x88], // low   — green
-        [0xff, 0xaa, 0x33], // mid   — orange
-        [0xff, 0x55, 0x66], // high  — red
-    ];
-    for y in 0..H {
-        for x in 0..W {
-            let qx = (x >= W / 2) as usize;
-            let qy = (y >= H / 2) as usize;
-            let idx = qy * 2 + qx;
-            let [r, g, b] = bands[idx];
-            let i = ((y * W + x) * 4) as usize;
-            rgba[i] = r;
-            rgba[i + 1] = g;
-            rgba[i + 2] = b;
-            rgba[i + 3] = 0xff;
-        }
-    }
+/// Decode the real AppIcon PNG (produced by the icon pipeline from AppIcon.svg)
+/// into an `egui::IconData`. The PNG is embedded at compile time via
+/// `include_bytes!`, so the running binary does not need the asset on disk.
+fn load_app_icon() -> Option<egui::IconData> {
+    let bytes = include_bytes!("../assets/icon/AppIcon.png");
+    let img = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let (width, height) = img.dimensions();
+    Some(egui::IconData {
+        rgba: img.into_raw(),
+        width,
+        height,
+    })
+}
+
+/// Minimal 1x1 transparent fallback. Only used if the embedded PNG ever fails
+/// to decode (which would indicate a build-time asset problem).
+fn fallback_1x1_icon() -> egui::IconData {
     egui::IconData {
-        rgba,
-        width: W,
-        height: H,
+        rgba: vec![0, 0, 0, 0],
+        width: 1,
+        height: 1,
     }
 }
 
@@ -50,7 +40,7 @@ fn main() -> Result<(), eframe::Error> {
         // buttons disappear on some systems, flip this to `false`.
         .with_fullsize_content_view(true)
         .with_title_shown(false)
-        .with_icon(generate_app_icon());
+        .with_icon(load_app_icon().unwrap_or_else(fallback_1x1_icon));
 
     let native_options = eframe::NativeOptions {
         viewport,

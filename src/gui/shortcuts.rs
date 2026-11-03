@@ -60,14 +60,11 @@ impl ShortcutOverlay {
                 ui.separator();
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            if ui.button("Close").clicked() {
-                                self.visible = false;
-                            }
-                        },
-                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Close").clicked() {
+                            self.visible = false;
+                        }
+                    });
                 });
             });
 
@@ -106,7 +103,10 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("\u{2318}O", "Open audio file"),
     ("\u{2318}R", "Reload analysis JSON"),
     ("\u{2318}.", "Stop (seek to loop start)"),
-    ("\u{2190} / \u{2192}", "Seek -5s / +5s (hold Shift for \u{00B1}1s)"),
+    (
+        "\u{2190} / \u{2192}",
+        "Seek -5s / +5s (hold Shift for \u{00B1}1s)",
+    ),
     ("Home", "Seek to loop start"),
     ("End", "Seek to end"),
     ("L", "Toggle loop"),

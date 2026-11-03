@@ -89,7 +89,30 @@ pub fn install_mac_style(ctx: Context) {
         apply_spacing(style);
         apply_visuals(style);
         apply_scroll(style);
+        // Logic Pro–ish tooltip delay (default is already 0.5, but keep explicit).
+        style.interaction.tooltip_delay = 0.5;
     });
+}
+
+/// Draw a 20%-opacity hairline divider spanning `ui.max_rect().x_range()` at the
+/// current cursor y. Logic Pro–style soft separator, replaces loud `ui.separator()`.
+pub fn soft_divider(ui: &mut egui::Ui) {
+    let color = ui.visuals().widgets.noninteractive.bg_stroke.color;
+    let faded = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 51);
+    let y = ui.cursor().min.y;
+    ui.painter()
+        .hline(ui.max_rect().x_range(), y, Stroke::new(1.0, faded));
+    ui.add_space(4.0);
+}
+
+/// Secondary label color helper — SF-style grey (`#8E8E93`).
+pub fn secondary_label(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    let p = if ui.visuals().dark_mode {
+        MAC_PALETTE_DARK
+    } else {
+        MAC_PALETTE_LIGHT
+    };
+    ui.label(egui::RichText::new(text).color(p.text_secondary))
 }
 
 // ---------------------------------------------------------------------------
@@ -98,10 +121,9 @@ pub fn install_mac_style(ctx: Context) {
 
 fn apply_typography(style: &mut Style) {
     // Body / Button: 13 px proportional (SF-ish body size).
-    style.text_styles.insert(
-        TextStyle::Body,
-        FontId::new(13.0, FontFamily::Proportional),
-    );
+    style
+        .text_styles
+        .insert(TextStyle::Body, FontId::new(13.0, FontFamily::Proportional));
     style.text_styles.insert(
         TextStyle::Button,
         FontId::new(13.0, FontFamily::Proportional),
@@ -129,12 +151,13 @@ fn apply_typography(style: &mut Style) {
 
 fn apply_spacing(style: &mut Style) {
     let s = &mut style.spacing;
-    s.item_spacing = vec2(8.0, 6.0);
-    s.indent = 18.0;
-    s.button_padding = vec2(10.0, 6.0);
+    // Tighter vertical rhythm, slightly wider horizontal — inspector feel.
+    s.item_spacing = vec2(10.0, 4.0);
+    s.indent = 14.0;
+    s.button_padding = vec2(12.0, 4.0);
     s.icon_width = 14.0;
     s.slider_width = 180.0;
-    s.combo_width = 180.0;
+    s.combo_width = 160.0;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,8 +195,8 @@ fn apply_visuals(style: &mut Style) {
     // Window stroke (hairline border).
     v.window_stroke = Stroke::new(0.5, p.border);
 
-    // Collapsing headers get a frame — matches the "sidebar group" look.
-    v.collapsing_header_frame = true;
+    // Logic Pro–style bare collapsing headers (no boxed frame, just an indent chevron).
+    v.collapsing_header_frame = false;
 
     // Selection (text, highlighted items).
     v.selection.bg_fill = p.selected;

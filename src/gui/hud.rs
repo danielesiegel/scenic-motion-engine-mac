@@ -22,7 +22,10 @@ impl HudOverlay {
                 .fill(Color32::from_rgba_unmultiplied(16, 16, 18, 215))
                 .rounding(Rounding::same(8.0))
                 .inner_margin(egui::Margin::same(10.0))
-                .stroke(Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 40)));
+                .stroke(Stroke::new(
+                    1.0,
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 40),
+                ));
 
             frame.show(ui, |ui| {
                 ui.set_min_size(size - vec2(20.0, 20.0));

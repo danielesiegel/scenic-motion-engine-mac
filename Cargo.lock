@@ -3387,6 +3387,7 @@ dependencies = [
  "env_logger",
  "glam",
  "glyphon",
+ "image",
  "log",
  "once_cell",
  "parking_lot",

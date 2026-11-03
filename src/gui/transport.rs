@@ -57,7 +57,11 @@ impl TransportBar {
         ui.horizontal(|ui| {
             // 1. Play / pause.
             let playing = player.is_playing();
-            let glyph = if playing { "\u{275A}\u{275A}" } else { "\u{25B6}" };
+            let glyph = if playing {
+                "\u{275A}\u{275A}"
+            } else {
+                "\u{25B6}"
+            };
             let btn = Button::new(RichText::new(glyph).strong().monospace())
                 .min_size(Vec2::new(32.0, 26.0));
             if ui.add(btn).clicked() {
@@ -140,30 +144,26 @@ impl TransportBar {
 
     fn handle_shortcuts(&self, ui: &egui::Ui, player: &mut Player, duration: f32) {
         // Capture flags; apply after releasing the input borrow.
-        let (
-            toggle_play,
-            seek_home,
-            seek_end,
-            step_back,
-            step_fwd,
-            back_small,
-            fwd_small,
-        ) = ui.input(|i| {
-            let shift = i.modifiers.shift;
-            let cmd = i.modifiers.command || i.modifiers.mac_cmd;
-            (
-                i.key_pressed(Key::Space),
-                i.key_pressed(Key::Home) || (cmd && i.key_pressed(Key::Period)),
-                i.key_pressed(Key::End),
-                i.key_pressed(Key::ArrowLeft) && !shift && !cmd && i.modifiers == Modifiers::NONE,
-                i.key_pressed(Key::ArrowRight)
-                    && !shift
-                    && !cmd
-                    && i.modifiers == Modifiers::NONE,
-                i.key_pressed(Key::ArrowLeft) && shift,
-                i.key_pressed(Key::ArrowRight) && shift,
-            )
-        });
+        let (toggle_play, seek_home, seek_end, step_back, step_fwd, back_small, fwd_small) = ui
+            .input(|i| {
+                let shift = i.modifiers.shift;
+                let cmd = i.modifiers.command || i.modifiers.mac_cmd;
+                (
+                    i.key_pressed(Key::Space),
+                    i.key_pressed(Key::Home) || (cmd && i.key_pressed(Key::Period)),
+                    i.key_pressed(Key::End),
+                    i.key_pressed(Key::ArrowLeft)
+                        && !shift
+                        && !cmd
+                        && i.modifiers == Modifiers::NONE,
+                    i.key_pressed(Key::ArrowRight)
+                        && !shift
+                        && !cmd
+                        && i.modifiers == Modifiers::NONE,
+                    i.key_pressed(Key::ArrowLeft) && shift,
+                    i.key_pressed(Key::ArrowRight) && shift,
+                )
+            });
 
         if toggle_play {
             if player.is_playing() {

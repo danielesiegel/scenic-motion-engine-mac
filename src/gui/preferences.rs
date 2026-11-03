@@ -172,7 +172,10 @@ impl PreferencesWindow {
 }
 
 fn tab_btn(ui: &mut egui::Ui, state: &mut PrefsTab, this: PrefsTab, label: &str) {
-    if ui.add(SelectableLabel::new(*state == this, label)).clicked() {
+    if ui
+        .add(SelectableLabel::new(*state == this, label))
+        .clicked()
+    {
         *state = this;
     }
 }
@@ -223,7 +226,11 @@ fn record_tab(ui: &mut egui::Ui, cfg: &mut Config) {
             .selected_text(format!("{}×", cfg.record.resolution_multiplier.max(1)))
             .show_ui(ui, |ui| {
                 for m in [1u32, 2, 3, 4] {
-                    ui.selectable_value(&mut cfg.record.resolution_multiplier, m, format!("{}×", m));
+                    ui.selectable_value(
+                        &mut cfg.record.resolution_multiplier,
+                        m,
+                        format!("{}×", m),
+                    );
                 }
             });
     });
@@ -282,7 +289,10 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("\u{2318}S", "Save config now"),
     ("\u{2318},", "Open Preferences"),
     ("\u{2318}\u{21E7}?", "About scenic motion engine"),
-    ("\u{2190} / \u{2192}", "Seek -5s / +5s (hold Shift for \u{00B1}1s)"),
+    (
+        "\u{2190} / \u{2192}",
+        "Seek -5s / +5s (hold Shift for \u{00B1}1s)",
+    ),
     ("Home", "Seek to loop start"),
     ("End", "Seek to end"),
     ("L", "Toggle loop"),

@@ -1,139 +1,148 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>scenic motion engine</title>
-  <meta name="description" content="Audio-reactive looping marquee for macOS. GPU text, native audio, deterministic engine, MP4 export.">
+  <meta name="description" content="Audio-reactive marquee for macOS. Native Metal rendering, 60 fps, zero drops.">
+  <meta property="og:title" content="scenic motion engine">
+  <meta property="og:description" content="Audio-reactive marquee for macOS. Native Metal rendering, 60 fps, zero drops.">
+  <meta property="og:type" content="website">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <nav class="topnav">
+  <nav class="nav">
     <div class="container nav-inner">
-      <a class="brand" href="#top">
-        <img src="favicon.svg" alt="" width="28" height="28">
+      <a class="brand" href="#top" aria-label="scenic motion engine home">
+        <img src="favicon.svg" alt="" width="22" height="22">
         <span>scenic motion engine</span>
       </a>
-      <a class="nav-link" href="https://github.com/danielesiegel/scenic-motion-engine-mac">GitHub</a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/danielesiegel/scenic-motion-engine-mac">GitHub</a>
+      </div>
     </div>
   </nav>
 
   <main id="top">
     <section class="hero">
-      <div class="container">
+      <div class="container hero-inner">
+        <p class="eyebrow">Native macOS. Rust + Metal.</p>
         <h1>scenic motion engine</h1>
-        <p class="pitch">Audio-reactive looping marquee for macOS. Four-band transient detection drives per-row scrolling, camera moves, and spotlight repetition.</p>
-        <p class="actions">
-          <a class="btn btn-primary" href="https://github.com/danielesiegel/scenic-motion-engine-mac/releases/latest">Download latest release</a>
-          <a class="btn btn-ghost" href="https://github.com/danielesiegel/scenic-motion-engine-mac">View source</a>
-        </p>
-        <p class="meta">Native macOS build. GPU-accelerated. Deterministic. No telemetry.</p>
+        <p class="subtitle">Audio-reactive marquee for macOS. Native Metal rendering, 60 fps, zero drops.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://github.com/danielesiegel/scenic-motion-engine-mac/releases/latest">Download for macOS</a>
+          <a class="btn btn-ghost" href="https://github.com/danielesiegel/scenic-motion-engine-mac">View on GitHub</a>
+        </div>
+        <p class="hero-meta">macOS 13+ &middot; Apple Silicon &amp; Intel &middot; MIT licensed</p>
+      </div>
+      <div class="container hero-shot-wrap">
+        <div class="hero-shot">
+          <img src="screenshots/app.png" alt="scenic motion engine stage and control panel" loading="lazy">
+        </div>
       </div>
     </section>
 
-    <section class="features">
+    <section id="features" class="features">
       <div class="container">
-        <h2>What's inside</h2>
+        <header class="section-head">
+          <p class="eyebrow">Capabilities</p>
+          <h2>Built for frame-exact motion.</h2>
+          <p class="section-lede">A pure-function engine, a GPU text pipeline, and native audio. No browser graph. No dropped frames.</p>
+        </header>
         <div class="grid">
-          <article class="card accent-blue">
+          <article class="card">
+            <span class="icon" aria-hidden="true">&#x2B1B;</span>
             <h3>GPU text</h3>
-            <p>Glyph atlas on <code>wgpu</code> via glyphon. Thousands of animated characters at 60 fps.</p>
+            <p>Glyph atlas on wgpu / Metal via <code>glyphon</code>. Thousands of animated characters at 60 fps.</p>
           </article>
-          <article class="card accent-green">
+          <article class="card">
+            <span class="icon" aria-hidden="true">&#x25C9;</span>
             <h3>Native audio</h3>
-            <p>Core Audio capture with four-band transient detection — kick, snare, mid, hats.</p>
+            <p><code>cpal</code> on CoreAudio with <code>symphonia</code> decode. Four-band transient detection drives every motion.</p>
           </article>
-          <article class="card accent-orange">
+          <article class="card">
+            <span class="icon" aria-hidden="true">&#x221E;</span>
             <h3>Deterministic engine</h3>
-            <p><code>evaluate(EngineInputs) -&gt; FrameState</code> is a pure function of time. No mutable state.</p>
+            <p><code>evaluate(t)</code> is a pure function. Same inputs, same frame &mdash; every render, every export.</p>
           </article>
-          <article class="card accent-red">
+          <article class="card">
+            <span class="icon" aria-hidden="true">&#x2726;</span>
             <h3>Spotlight repetition</h3>
-            <p>Key-word traversal across rows with configurable frequency, phase offset, and anchor.</p>
+            <p>Key-word traversal across rows with configurable frequency, phase offset, and anchor mode.</p>
           </article>
-          <article class="card accent-blue">
+          <article class="card">
+            <span class="icon" aria-hidden="true">&#x2318;</span>
             <h3>Camera moves</h3>
-            <p>Zoom-focused, pan, tilt — all driven by the same ticker system that moves the rows.</p>
+            <p>Zoom, pan, tilt &mdash; wired through the same ticker system that drives per-row scroll.</p>
           </article>
-          <article class="card accent-green">
+          <article class="card">
+            <span class="icon" aria-hidden="true">&#x25B6;</span>
             <h3>MP4 export</h3>
-            <p>Offline render at any resolution multiplier. VideoToolbox-backed H.264 encode.</p>
+            <p>Offline render at any resolution multiplier. <code>ffmpeg</code> now, native AVFoundation H.264 next.</p>
           </article>
         </div>
       </div>
     </section>
 
-    <section class="shot">
+    <section id="how" class="how">
       <div class="container">
-        <h2>Screenshot</h2>
-        <img src="../docs/screenshots/app.png" alt="scenic motion engine application window" loading="lazy">
+        <header class="section-head">
+          <p class="eyebrow">Workflow</p>
+          <h2>Analyze. Preview. Record.</h2>
+          <p class="section-lede">Three steps from a raw WAV to a frame-exact MP4.</p>
+        </header>
+        <ol class="steps">
+          <li class="step">
+            <span class="step-num">01</span>
+            <h3>Analyze</h3>
+            <p>Produce a four-band transient JSON from your audio with the shared Python analyzer.</p>
+<pre><code>npm run analyze -- --input assets/audio/track.wav</code></pre>
+          </li>
+          <li class="step">
+            <span class="step-num">02</span>
+            <h3>Preview</h3>
+            <p>Launch the app. Scrub, tune thresholds, pick a feel preset, swap bindings in the side panel.</p>
+<pre><code>cargo run --release</code></pre>
+          </li>
+          <li class="step">
+            <span class="step-num">03</span>
+            <h3>Record</h3>
+            <p>Export to MP4 at any resolution multiplier. Deterministic &mdash; what you preview is what you ship.</p>
+<pre><code>make render ARGS="--duration 60 --fps 60"</code></pre>
+          </li>
+        </ol>
       </div>
     </section>
 
-    <section class="code">
+    <section id="install" class="install">
       <div class="container">
-        <h2>Config, by default</h2>
-        <p class="code-caption">A trimmed excerpt from <code>default_config()</code>. The whole config — rows, tickers, bindings, camera — is one serializable value.</p>
-<pre><code>pub fn default_config() -&gt; Config {
-    let tickers = vec![
-        TickerConfig {
-            id: "kick-even-slide".into(),
-            band: Band::Kick,
-            modulo: 1,
-            strength_threshold: Some(0.25),
-            ..
-        },
-        TickerConfig {
-            id: "kick-camera-zoompan".into(),
-            band: Band::Kick,
-            modulo: 4,
-            step: Some(4),
-            step_offset: Some(3),
-            ..
-        },
-    ];
-
-    Config {
-        text: TextConfig {
-            unit: "scenicsynth".into(),
-            key: "scenicsynths".into(),
-            case: TextCase::Lower,
-        },
-        layout: LayoutConfig {
-            font_size_px: 72.0,
-            row_stagger_px: 0.33,
-            ..
-        },
-        canvas: CanvasConfig {
-            width: 1920, height: 1080,
-            dpr: 2.0, render_scale: 2.0,
-        },
-        camera: CameraConfig {
-            baseline: CameraBaseline {
-                zoom: 1.0, pan_x: 0.0, pan_y: 0.0, tilt: -5.0,
-            },
-            row_overshoot: 3,
-        },
-        record: RecordConfig {
-            start_at: 0.0, duration: 10.0,
-            fps: 60, video_bitrate_mbps: 20,
-            resolution_multiplier: 2,
-            engine: RecordEngine::Auto,
-        },
-        ..
-    }
-}</code></pre>
+        <header class="section-head">
+          <p class="eyebrow">Install</p>
+          <h2>One command.</h2>
+          <p class="section-lede">Homebrew cask on the tap. macOS 13+ on Apple Silicon or Intel.</p>
+        </header>
+        <div class="install-block">
+          <pre><code>brew install --cask danielesiegel/tap/scenic-motion-engine</code></pre>
+          <span class="copy-hint" aria-hidden="true">Copy</span>
+        </div>
+        <p class="install-note">Prefer source? <a href="https://github.com/danielesiegel/scenic-motion-engine-mac#build">Build from Rust</a> with <code>cargo build --release</code>.</p>
       </div>
     </section>
   </main>
 
   <footer>
     <div class="container footer-inner">
-      <p>
-        <a href="https://github.com/danielesiegel/scenic-motion-engine-mac">github.com/danielesiegel/scenic-motion-engine-mac</a>
-      </p>
-      <p class="small">Native macOS port of <a href="https://github.com/danielesiegel/scenic-motion-engine-web">scenic-motion-engine-web</a>.</p>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="https://github.com/danielesiegel/scenic-motion-engine-mac">GitHub</a>
+        <a href="https://github.com/danielesiegel/scenic-motion-engine-mac/blob/main/LICENSE">License</a>
+        <a href="https://github.com/danielesiegel/scenic-motion-engine-mac/blob/main/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/danielesiegel/scenic-motion-engine-mac/tree/main/docs">Documentation</a>
+      </nav>
+      <p class="footer-credit">Built in Rust. Audio by you.</p>
     </div>
   </footer>
 </body>
