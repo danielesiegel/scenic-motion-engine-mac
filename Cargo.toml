@@ -27,7 +27,7 @@ egui = "0.29"
 egui-wgpu = "0.29"
 wgpu = { version = "22", features = ["metal"] }
 winit = "0.30"
-pollster = "0.4"
+pollster = "1.0"
 
 # --- Text ---
 cosmic-text = "0.12"
