@@ -9,7 +9,8 @@
 [![last commit](https://img.shields.io/github/last-commit/danielesiegel/scenic-motion-engine-mac)](https://github.com/danielesiegel/scenic-motion-engine-mac/commits)
 [![open issues](https://img.shields.io/github/issues/danielesiegel/scenic-motion-engine-mac)](https://github.com/danielesiegel/scenic-motion-engine-mac/issues)
 
-![scenic-motion-engine hero](docs/hero.png)
+![scenic-motion-engine stage + control panel](docs/screenshots/app.png)
+_Stage renders rows of `scenicsynth` with 12-glyph `scenicsynths` spotlights every N units. Right panel is the full control surface — feel presets, horizontal × scale, row velocity curve, duration scale, global easing, spotlight / tickers / bindings / camera / record folders. Bottom bar: scrub + loop controls._
 
 Native macOS port of [`scenic-motion-engine-web`](https://github.com/danielesiegel/scenic-motion-engine-web). Audio-reactive looping marquee: four-band transient detection drives per-row scrolling, camera zoom / tilt / pan, spotlight repetition. The engine is a **pure function of time** — `engine::evaluate(EngineInputs) -> FrameState` has no mutable state.
 
@@ -139,6 +140,18 @@ once_cell = "1"
 ```
 
 (Exact versions may drift; `Cargo.lock` is the source of truth.)
+
+### Make targets
+
+Common commands are wrapped in a `Makefile` — run `make help` to list them.
+
+| Target | What it does |
+| ------ | ------------ |
+| `make run` | Launch the GUI app |
+| `make render ARGS="..."` | Headless MP4 export via `src/bin/render.rs` |
+| `make check` | `clippy -D warnings` + `fmt --check` |
+| `make bundle` | Universal binary → `.app` → `.dmg` under `target/release/` |
+| `make analyze ARGS="--input assets/audio/kafkaesque.wav"` | Produce analysis JSON |
 
 ---
 
