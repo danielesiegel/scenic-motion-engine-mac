@@ -4,14 +4,14 @@
 //! - `ControlPanel::ui(&mut self, ui, config, callbacks)` renders the side panel. All controls
 //!   mutate `config` in place; buttons invoke `callbacks` (record, copy_config, reload_analysis).
 
-use crate::gui::style::{secondary_label, soft_divider};
+use crate::gui::style::{secondary_label, secondary_label_color, soft_divider};
 use crate::types::{
     Band, Binding, CameraBaseline, CameraConfig, ColorConfig, Config, DebugConfig, Easing,
     EasingName, FeelConfig, FeelPreset, GlobalEasing, KeyConfig, KeyMode, KeyRowValue, KeyRows,
     LayoutConfig, MiddleTag, PhaseAction, RecordConfig, RecordEngine, RowVelocityShape, TextCase,
     TextConfig, TickerConfig,
 };
-use egui::{Color32, ComboBox, RichText, Slider};
+use egui::{Button, Color32, ComboBox, RichText, Slider};
 
 // -------------------------------------------------------------------
 // Visual constants (macOS inspector feel)
@@ -69,6 +69,8 @@ pub struct ControlPanel {
     /// Cubic-bezier draft that the "apply bezier" button would use (not yet wired up —
     /// GlobalEasing enum has no Bezier variant).
     bezier: [f32; 4],
+    /// Whether the cubic-bezier override modal is open.
+    bezier_modal_open: bool,
 }
 
 pub struct PanelCallbacks<'a> {

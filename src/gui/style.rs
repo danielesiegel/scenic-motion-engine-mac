@@ -91,7 +91,21 @@ pub fn install_mac_style(ctx: Context) {
         apply_scroll(style);
         // Logic Pro–ish tooltip delay (default is already 0.5, but keep explicit).
         style.interaction.tooltip_delay = 0.5;
+        // Allow users to select text labels (Zed/Linear style).
+        style.interaction.selectable_labels = true;
     });
+}
+
+/// Blend two sRGB colors by `t` (0.0 = `a`, 1.0 = `b`). Preserves alpha from `a`.
+fn blend_srgb(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |x: u8, y: u8| ((x as f32) * (1.0 - t) + (y as f32) * t).round() as u8;
+    Color32::from_rgba_unmultiplied(
+        lerp(a.r(), b.r()),
+        lerp(a.g(), b.g()),
+        lerp(a.b(), b.b()),
+        a.a(),
+    )
 }
 
 /// Draw a 20%-opacity hairline divider spanning `ui.max_rect().x_range()` at the
@@ -107,12 +121,17 @@ pub fn soft_divider(ui: &mut egui::Ui) {
 
 /// Secondary label color helper — SF-style grey (`#8E8E93`).
 pub fn secondary_label(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    ui.label(egui::RichText::new(text).color(secondary_label_color(ui)))
+}
+
+/// Returns the mode-aware secondary label color (`#8E8E93` in dark, `#6E6E73` in light).
+pub fn secondary_label_color(ui: &egui::Ui) -> Color32 {
     let p = if ui.visuals().dark_mode {
         MAC_PALETTE_DARK
     } else {
         MAC_PALETTE_LIGHT
     };
-    ui.label(egui::RichText::new(text).color(p.text_secondary))
+    p.text_secondary
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +176,7 @@ fn apply_spacing(style: &mut Style) {
     s.button_padding = vec2(12.0, 4.0);
     s.icon_width = 14.0;
     s.slider_width = 180.0;
-    s.combo_width = 160.0;
+    s.combo_width = 148.0;
 }
 
 // ---------------------------------------------------------------------------
@@ -220,12 +239,12 @@ fn apply_widget_visuals(v: &mut Visuals, p: &MacPalette) {
     w.fg_stroke = Stroke::new(1.0_f32, p.text_primary);
 
     // Inactive = buttons at rest, slider track.
-    // `weak_bg_fill` is what Button uses for its background; keep it a shade above the
-    // panel so buttons are visible without being loud (fixes buttons-blend-into-panel).
+    // `weak_bg_fill` is what Button uses for its background; blend halfway between the
+    // panel and hover color so buttons sit a shade above the pane without shouting.
     let w = &mut v.widgets.inactive;
     w.rounding = r;
     w.bg_fill = p.hover;
-    w.weak_bg_fill = p.hover;
+    w.weak_bg_fill = blend_srgb(p.panel_bg, p.hover, 0.5);
     w.bg_stroke = hairline;
     w.fg_stroke = Stroke::new(1.0_f32, p.text_primary);
 

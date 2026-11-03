@@ -602,6 +602,12 @@ pub struct RecordConfig {
 pub struct DebugConfig {
     /// Show the on-screen heads-up display.
     pub hud: bool,
+    /// Whether the Preferences window is open.
+    #[serde(default)]
+    pub prefs_open: bool,
+    /// Whether the About window is open.
+    #[serde(default)]
+    pub about_open: bool,
 }
 
 /// Top-level configuration consumed by every subsystem (mirrors TS Config).

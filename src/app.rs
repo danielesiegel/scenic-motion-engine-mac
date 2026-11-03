@@ -449,6 +449,10 @@ struct ShortcutActions {
 
 impl eframe::App for ScenicApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Sync persisted visibility onto the live panel structs at frame start.
+        self.about.visible = self.config.debug.about_open;
+        self.prefs.visible = self.config.debug.prefs_open;
+
         self.sync_default_background(ctx);
         crate::gui::handle_dropped_files(ctx, &mut self.player, &mut self.source);
 
@@ -636,6 +640,42 @@ impl eframe::App for ScenicApp {
                         rect,
                         ScenicPaintCallback,
                     ));
+                    if self.recording_thread.is_some() {
+                        let done = self
+                            .recording_progress
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                            as f32
+                            / 100.0;
+                        let total = self
+                            .recording_total
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                            .max(1) as f32
+                            / 100.0;
+                        let pct = (done / total).clamp(0.0, 1.0);
+                        let rect = ui.max_rect();
+                        let bar_h = 48.0_f32;
+                        let bar_rect = egui::Rect::from_min_size(
+                            egui::pos2(rect.min.x, rect.max.y - bar_h),
+                            egui::vec2(rect.width(), bar_h),
+                        );
+                        let bg = egui::Color32::from_rgba_unmultiplied(10, 10, 12, 220);
+                        ui.painter().rect_filled(bar_rect, 0.0, bg);
+                        // Progress fill
+                        let fill_rect = egui::Rect::from_min_size(
+                            bar_rect.min,
+                            egui::vec2(bar_rect.width() * pct, bar_h),
+                        );
+                        let fill = egui::Color32::from_rgba_unmultiplied(0x7c, 0x88, 0xff, 180);
+                        ui.painter().rect_filled(fill_rect, 0.0, fill);
+                        // Label
+                        ui.painter().text(
+                            bar_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            format!("recording {:.1} / {:.1}s", done, total),
+                            egui::FontId::proportional(14.0),
+                            egui::Color32::from_rgb(230, 230, 235),
+                        );
+                    }
                     if self.config.debug.hud {
                         self.hud.ui(ui, &state, self.source.as_ref());
                     }
@@ -694,6 +734,10 @@ impl eframe::App for ScenicApp {
         self.shortcuts.ui(ctx);
         self.about.ui(ctx);
         self.prefs.ui(ctx, &mut self.config);
+
+        // Capture any user-driven visibility changes (X button, toggle) back to config.
+        self.config.debug.about_open = self.about.visible;
+        self.config.debug.prefs_open = self.prefs.visible;
 
         // Keep repainting while playing so the frame clock advances.
         if self.player.is_playing() {
