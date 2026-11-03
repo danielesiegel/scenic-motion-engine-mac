@@ -35,7 +35,7 @@ glyphon = "0.6"
 
 # --- Audio ---
 cpal = "0.15"
-symphonia = { version = "0.5", features = ["wav", "pcm", "mp3", "flac"] }
+symphonia = { version = "0.6", features = ["wav", "pcm", "mp3", "flac"] }
 rtrb = "0.3"                                             # lock-free audio ring
 
 # --- Core ---
