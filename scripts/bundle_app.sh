@@ -38,6 +38,19 @@ chmod +x "${APP_DIR}/Contents/MacOS/${BIN_NAME}"
 echo "==> Writing Info.plist"
 sed "s/__VERSION__/${VERSION}/g" "${TEMPLATE}" > "${APP_DIR}/Contents/Info.plist"
 
+ICNS_SRC="assets/icon/AppIcon.icns"
+if [[ -f "${ICNS_SRC}" ]]; then
+  echo "==> Copying AppIcon.icns"
+  cp "${ICNS_SRC}" "${APP_DIR}/Contents/Resources/AppIcon.icns"
+  # Inject CFBundleIconFile into generated Info.plist (template is untouched).
+  /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" \
+    "${APP_DIR}/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" \
+    "${APP_DIR}/Contents/Info.plist"
+else
+  echo "WARN: ${ICNS_SRC} missing. Run scripts/make_icon.sh to generate it." >&2
+fi
+
 echo "==> Bundle layout:"
 find "${APP_DIR}" -maxdepth 3 -print
 

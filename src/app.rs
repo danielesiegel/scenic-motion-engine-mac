@@ -14,7 +14,10 @@ use std::time::Instant;
 use crate::audio::{JsonEventSource, Player, SyntheticEventSource};
 use crate::engine::{evaluate, EngineInputs};
 use crate::gui::panel::{ControlPanel, PanelCallbacks};
-use crate::gui::{HudOverlay, ShortcutOverlay, TransportBar, WelcomeScreen};
+use crate::gui::{
+    AboutPanel, HudOverlay, PreferencesWindow, ShortcutOverlay, TransportBar, WaveformStrip,
+    WelcomeScreen,
+};
 use crate::motion::paths::register_default_paths;
 use crate::record::{OfflineRenderOptions, OfflineRenderer};
 use crate::render::gpu::GpuContext;
@@ -42,9 +45,12 @@ pub struct ScenicApp {
 
     panel: ControlPanel,
     transport: TransportBar,
+    waveform: WaveformStrip,
     hud: HudOverlay,
     welcome: WelcomeScreen,
     shortcuts: ShortcutOverlay,
+    about: AboutPanel,
+    prefs: PreferencesWindow,
 
     text_renderer_installed: bool,
     last_font_size: f32,
@@ -135,9 +141,12 @@ impl ScenicApp {
             player,
             panel: ControlPanel::default(),
             transport: TransportBar::default(),
+            waveform: WaveformStrip::default(),
             hud: HudOverlay,
             welcome: WelcomeScreen::default(),
             shortcuts: ShortcutOverlay::default(),
+            about: AboutPanel::default(),
+            prefs: PreferencesWindow::default(),
             text_renderer_installed,
             last_font_size,
             last_render_scale,
@@ -553,6 +562,14 @@ impl eframe::App for ScenicApp {
                 self.transport.ui(ui, &mut self.player);
             });
 
+        // --- Waveform minimap (between transport and central stage) ---
+        egui::TopBottomPanel::bottom("waveform")
+            .exact_height(44.0)
+            .frame(egui::Frame::default().fill(ctx.style().visuals.widgets.inactive.bg_fill))
+            .show(ctx, |ui| {
+                self.waveform.ui(ui, &mut self.player);
+            });
+
         // --- Central stage ---
         // Zero margins so the GPU text / background fills the entire stage without
         // egui's style padding bleeding through.
@@ -637,14 +654,30 @@ impl eframe::App for ScenicApp {
         // --- Shortcut cheatsheet overlay ---
         // Toggle with `?` (which under US keyboards is Shift+Slash). Accept both the
         // bare Questionmark key and Shift+Slash so hardware/layout quirks don't lock
-        // users out.
-        if ctx.input(|i| {
-            i.key_pressed(egui::Key::Questionmark)
-                || (i.modifiers.shift && i.key_pressed(egui::Key::Slash))
-        }) {
+        // users out. ⌘⇧? routes to About instead.
+        let (toggle_about, toggle_prefs, toggle_shortcuts) = ctx.input(|i| {
+            let cmd = i.modifiers.mac_cmd;
+            let shift = i.modifiers.shift;
+            let qmark = i.key_pressed(egui::Key::Questionmark);
+            let shift_slash = shift && i.key_pressed(egui::Key::Slash);
+            let about = cmd && (qmark || shift_slash);
+            let prefs = cmd && i.key_pressed(egui::Key::Comma);
+            // Shortcuts cheatsheet only when Cmd isn't held (⌘⇧? is reserved for About).
+            let shortcuts = !cmd && (qmark || shift_slash);
+            (about, prefs, shortcuts)
+        });
+        if toggle_about {
+            self.about.toggle();
+        }
+        if toggle_prefs {
+            self.prefs.toggle();
+        }
+        if toggle_shortcuts {
             self.shortcuts.toggle();
         }
         self.shortcuts.ui(ctx);
+        self.about.ui(ctx);
+        self.prefs.ui(ctx, &mut self.config);
 
         // Keep repainting while playing so the frame clock advances.
         if self.player.is_playing() {

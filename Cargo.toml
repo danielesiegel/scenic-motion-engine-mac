@@ -6,6 +6,7 @@ authors = ["Daniel Siegel <daniel@integralmimetics.com>"]
 description = "Native Mac audio-reactive marquee: four-band transient detection drives per-row scrolling, camera zoom/tilt/pan, spotlight repetition. GPU text via glyphon, egui control panel, cpal/symphonia audio, ffmpeg-pipe MP4 export."
 license = "MIT"
 repository = "https://github.com/danielesiegel/scenic-motion-engine-mac"
+default-run = "scenic-motion-engine"
 
 [profile.dev]
 opt-level = 1              # text layout + wgpu are miserable at opt-level 0
