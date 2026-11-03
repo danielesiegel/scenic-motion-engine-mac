@@ -220,10 +220,12 @@ fn apply_widget_visuals(v: &mut Visuals, p: &MacPalette) {
     w.fg_stroke = Stroke::new(1.0_f32, p.text_primary);
 
     // Inactive = buttons at rest, slider track.
+    // `weak_bg_fill` is what Button uses for its background; keep it a shade above the
+    // panel so buttons are visible without being loud (fixes buttons-blend-into-panel).
     let w = &mut v.widgets.inactive;
     w.rounding = r;
     w.bg_fill = p.hover;
-    w.weak_bg_fill = p.panel_bg;
+    w.weak_bg_fill = p.hover;
     w.bg_stroke = hairline;
     w.fg_stroke = Stroke::new(1.0_f32, p.text_primary);
 

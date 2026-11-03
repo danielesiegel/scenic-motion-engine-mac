@@ -9,7 +9,11 @@ version = 2
 # controls which crates are inspected. "all" preserves warn-on-unmaintained.
 unmaintained = "all"
 yanked = "warn"
-ignore = []
+ignore = [
+    # zvariant_derive advisory — transitive via rfd -> ashpd -> zbus. No safe upgrade
+    # until rfd ships a zbus-6 compatible release. Revisit when rfd > 0.15 lands.
+    "RUSTSEC-2024-0421",
+]
 
 [licenses]
 version = 2
