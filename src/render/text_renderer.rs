@@ -160,7 +160,11 @@ impl TextRenderer {
         // Temporary benchmark instrumentation gated behind an env var; the branch is a dead
         // predicate in production (env lookup is a syscall, so cheap for non-bench builds).
         let bench = std::env::var_os("SCENIC_BENCH_PREPARE").is_some();
-        let t0 = if bench { Some(std::time::Instant::now()) } else { None };
+        let t0 = if bench {
+            Some(std::time::Instant::now())
+        } else {
+            None
+        };
         self.placements.clear();
 
         // `used_row` / `used_glyph` track the next slot in the (persistent) buffer pools to

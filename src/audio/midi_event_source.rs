@@ -64,7 +64,9 @@ impl MidiBuffer {
 pub struct MidiEventSource {
     bands: Vec<Band>,
     buffer: Arc<Mutex<MidiBuffer>>,
-    _conn: MidiInputConnection<()>,
+    // ALSA connections are Send but not Sync. Keep the handle private behind a
+    // mutex so this source satisfies EventSource on every supported platform.
+    _conn: Mutex<MidiInputConnection<()>>,
     _start: Instant,
 }
 
@@ -130,7 +132,7 @@ impl MidiEventSource {
         Ok(Self {
             bands: Band::ALL.to_vec(),
             buffer,
-            _conn: conn,
+            _conn: Mutex::new(conn),
             _start: start,
         })
     }
@@ -204,12 +206,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn midi_event_source_is_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<MidiEventSource>();
+    }
+
+    #[test]
     fn new_errors_cleanly_when_no_devices() {
         // On a MIDI-less system `new` must return Err without panicking. On a
         // system with devices this test either exercises the success path (and
         // verifies trait methods) or is a no-op if construction fails for other
         // reasons — in all cases it must not panic.
-        let probe = MidiInput::new("probe").expect("probe MidiInput");
+        let probe = match MidiInput::new("probe") {
+            Ok(probe) => probe,
+            Err(_) => {
+                // Headless Linux runners may have no ALSA sequencer at all.
+                assert!(MidiEventSource::new(None).is_err());
+                return;
+            }
+        };
         let have_devices = !probe.ports().is_empty();
         // Explicitly release the probe handle before attempting to open an input;
         // `MidiInput` has no Drop impl, so we shadow it instead of calling `drop`.
