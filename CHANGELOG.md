@@ -19,6 +19,8 @@ Project context, feature matrix, and architecture live in the
 
 ### Fixed
 
+- Linux MIDI source compilation while preserving the `EventSource` thread-safety contract.
+
 ---
 
 ## [0.1.0] - 2026-11-02
